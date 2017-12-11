@@ -1,11 +1,16 @@
 /**
+ *  Agentreleasev2
+ *  Author: ottarg
+ *  Description: 
+ */model Agent_release_v2
+/**
  *  Agent
  *  Author: ottarg and xin 
  *  Description: sweet stuff
  */
 
-model Agent_release_v1_1
 
+import "building.gaml"
 
 global {
 	file building_shapefile <- file("../includes/building.shp");
@@ -110,6 +115,20 @@ global {
 			}
 		}
 		
+		// Get all supply interiors
+		int startX <- 0;
+		list<insideCell> buildingCell <- insideCell where not (each.is_obstacle);
+		int posAdder <- int(widthX / nb_supplies);
+		create insideBuilding number:nb_supplies
+		{
+			posAdd <- posAdder;
+			availableCells <- (buildingCell where (each.location.x < (startX + posAdder) and each.location.x > startX));
+			startPositionX <- startX;
+			endPositionX <- startX+ posAdder;
+			startX <- startPositionX + posAdder;
+		}
+		availableInteriors <- list<insideBuilding>(insideBuilding);
+		//write "found " + availableInteriors.size;
 		
 		create supplies number: nb_supplies 
 		{
@@ -118,6 +137,9 @@ global {
 			current_cell.is_free <- false;
 			remove current_cell from: _restrictCells;
 			
+			// Ref an inside model
+			suppyInterior <-one_of(availableInteriors);
+			remove suppyInterior from: availableInteriors;
 
 			// Remove all cells in range of supply depoit
 			// Make sure no camp is in range of supply
@@ -468,6 +490,7 @@ species supplies parent:building skills:[communicating]
 {
 	list<deliveryman> deliverymen;
 	rgb color <- rgb("blue");
+	insideBuilding suppyInterior;
 	
 	deliveryman loadingDeliveryMan;
 	int loadStartingCycle;
@@ -497,12 +520,15 @@ species supplies parent:building skills:[communicating]
 	reflex loadSupplier when: loadingDeliveryMan != nil
 	{
 		// How many rounds does it take to load vs each supply station can load at different speed?
-		if(cycle - loadStartingCycle > 5)				// Currently it takes 5 cycles
+		
+		suppyInterior.isLoading <- true;
+		if(suppyInterior.totalSupplies >= 300)			// About 50 cycles
+		//if(cycle - loadStartingCycle > 5)				// Currently it takes 5 cycles
 		{
 			write "Loaded " + loadingDeliveryMan + " successfully at cycle " + cycle + " from cycle " + loadStartingCycle;
-			
-			
-			loadingDeliveryMan.carryAmount <- 300.0;
+			loadingDeliveryMan.carryAmount <- suppyInterior.totalSupplies;
+			suppyInterior.totalSupplies <- 0.0;
+			suppyInterior.isLoading <- false;
 			loadingDeliveryMan <- nil;
 		}
 	}
@@ -582,7 +608,11 @@ experiment main type: gui {
 	parameter "Moving obstacles?" var: a <- true;
 	parameter "Moving obstacles?" var: b <- [1,2,3,4];*/
 	output {
-		
+		// Inside the loading docks
+		display inside_map type: opengl ambient_light: 150  {
+			species insideBuilding;
+			species staff;
+		}
 		// Change 120 to daylight_hour to use day/night system
 		display map type: opengl ambient_light: 120// daylight /*camera_pos: {world.location.x,-world.shape.height*1.5,70} camera_look_pos:{world.location.x,0,0}*/    
 		{
