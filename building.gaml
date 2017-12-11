@@ -1,9 +1,12 @@
 model building
 
+import "Agent_release_v2_0.gaml"
 
 global {
 	//file building_shapefile <- file("../includes/building.shp");
 	//geometry shape <- envelope(building_shapefile);
+	float staffCapacity<-100;
+	float supplyStorage <-10000;
 	int max_memory <- 5;
 	
 	// Each building is (200/n) x 20
@@ -23,6 +26,7 @@ species insideBuilding {
 	point exit_point;
 	point mid_Point;
 	int posAdd;
+	float storage;
 	
 	list<insideCell> availableCells;
 	list<staff> availableStaff;
@@ -30,12 +34,20 @@ species insideBuilding {
 	bool isLoading;
 	
 	float totalSupplies;
+	float futureTotalSupplies;
+	float totalCarry;
 	
 	rgb lineColor;
 	rgb staffColor;
+	
+	deliveryman loadingDeliveryMan;
+	
 	init
 	{
+		storage<-supplyStorage;
 		totalSupplies <- 0.0;
+		futureTotalSupplies<-0.0;
+		totalCarry<-0.0;
 		isLoading <- false;
 		lineColor <- startPositionX = 0 ? #white : #black;
 		staffColor <- rgb(rnd(255),rnd(255),rnd(255));
@@ -63,10 +75,10 @@ species insideBuilding {
 		
 	}
 	
-	reflex loadSupplies when: isLoading
+	/*reflex loadSupplies when: isLoading
 	{
 		//write "load me";
-	}
+	}*/
 	
 	aspect default {
 		//draw shape color: rgb("gray") depth: height;
@@ -87,12 +99,17 @@ species staff {
 	insideBuilding myBuilding;
 	int speed <- 5;
 	
-	float totalCarry;
+	float carry;
+	float capacity;
 	
 	// Too lazy to do FSM
 	bool travelToResource;
 	bool travelToDelivery;
 	
+	init
+	{
+		capacity<-staffCapacity;
+	}
 	// Just chat yeye
 	reflex chat when: !myBuilding.isLoading
 	{
@@ -104,12 +121,16 @@ species staff {
 		target_cell <- insideCell closest_to myBuilding.enter_point;
 		if(self.location distance_to target_cell.location < 2)
 		{
-			travelToResource <- true;
+			if(myBuilding.futureTotalSupplies<myBuilding.loadingDeliveryMan.capacity-myBuilding.loadingDeliveryMan.carryAmount){
+				travelToResource <- true;
+				myBuilding.futureTotalSupplies <- myBuilding.futureTotalSupplies + capacity;
+			}
+			
 		}
 	}	
 	
 	// Move to yellow
-	reflex getResource when: travelToResource//myBuilding.isLoading
+	reflex getResource when: travelToResource
 	{
 		target_cell <- insideCell closest_to myBuilding.resource_point;
 		if(self.location distance_to target_cell.location < 2)
@@ -117,7 +138,8 @@ species staff {
 			travelToResource <- false;
 			travelToDelivery <- true;
 			// Update carry 
-			totalCarry <- 100.0;
+			carry <-myBuilding.loadingDeliveryMan.capacity-myBuilding.loadingDeliveryMan.carryAmount-myBuilding.totalCarry > capacity? capacity : myBuilding.loadingDeliveryMan.capacity-myBuilding.loadingDeliveryMan.carryAmount-myBuilding.totalCarry;
+			myBuilding.totalCarry <-myBuilding.totalCarry+carry;
 		}
 	}
 	
@@ -127,16 +149,21 @@ species staff {
 		target_cell <- insideCell closest_to myBuilding.exit_point;
 		if(self.location distance_to target_cell.location < 2)
 		{
-			myBuilding.totalSupplies <- myBuilding.totalSupplies + totalCarry;
-			totalCarry <- 0;
+			myBuilding.totalSupplies <- myBuilding.totalSupplies + carry;
+			carry <- 0;
 			travelToDelivery <- false;
+			if(myBuilding.futureTotalSupplies<myBuilding.loadingDeliveryMan.capacity-myBuilding.loadingDeliveryMan.carryAmount){
+				travelToResource <- true;
+				myBuilding.futureTotalSupplies <- myBuilding.futureTotalSupplies + capacity;
+			}
 		}
 	}
 	
-	reflex move 
+	reflex move_1 when:((current_cell.location distance_to target_cell.location)>speed)
 	{
-		list<insideCell> possible_cells <- current_cell neighbours_at speed where ( not (each in memory));
-		if not empty(possible_cells) and target_cell != nil {
+		list<insideCell> possible_cells <- current_cell neighbours_at speed where (not (each.is_obstacle) and each.is_free and not (each in memory));
+		// Keep moving if not there
+		if not empty(possible_cells) {
 			current_cell.is_free <- true;
 			current_cell <- shuffle(possible_cells) with_min_of (each.location distance_to target_cell.location);
 			location <- current_cell.location;
@@ -145,6 +172,17 @@ species staff {
 			if (length(memory) > max_memory) {
 				remove memory[0] from: memory;
 			}
+		}
+	}
+	reflex move_2 when:((current_cell.location distance_to target_cell.location)<=speed and current_cell.location!=target_cell.location)
+	{
+		current_cell.is_free <- true;
+		current_cell <- target_cell;
+		location <- current_cell.location;
+		current_cell.is_free <- false;
+		memory << current_cell; 
+		if (length(memory) > max_memory) {
+			remove memory[0] from: memory;
 		}
 	}
 	
