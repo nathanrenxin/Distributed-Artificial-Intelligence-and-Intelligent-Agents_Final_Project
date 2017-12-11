@@ -19,6 +19,8 @@ global {
 	int mapSize_Y <- 200;
 	int controllerRange <- 50;
 	int deliveryRange <- 1;
+	float deliveryCapacity<-300;
+	float supplyStorage<-10000;
 	
 	
 	int peopleSpeed_rand <- 2;
@@ -260,7 +262,6 @@ species people skills:[moving, communicating] {
 
 species requester parent:people {
 	rgb color <- rgb(rnd(255),rnd(255),rnd(255));
-	int start_cycle;
 	camp startingCamp;
 	// The amount they are currently hold
 	float supplyAmount;
@@ -268,7 +269,6 @@ species requester parent:people {
 	bool monitorMode;		
 	init
 	{
-		start_cycle <-rnd(10);
 		write 'requester '+string(self) +' started binding to camp '+ string(startingCamp);
 		monitorMode <- true;
 		supplyAmount <- 0.0;
@@ -279,30 +279,25 @@ species requester parent:people {
 		if(startingCamp.storage < startingCamp.threshHold_level)
 		{
 			monitorMode <- false;
-			do send with: [receivers:: control, content:: ['I need supplies.'] ,performative::'request' ,protocol:: 'request_supplies'];
+			do send with: [receivers:: control, content:: ['I need supplies.',startingCamp.original_storage] ,performative::'request' ,protocol:: 'request_supplies'];
 			write 'requester '+string(self) +' sent a message to control center';
 		}
 		
 	}
 	
-	reflex suppliesToCamp when: !monitorMode and supplyAmount > 0.0
+	reflex requesterToCamp when: !monitorMode and supplyAmount > 0.0 and current_cell=home_cell
 	{
-		startingCamp.storage <- supplyAmount;
+		startingCamp.storage <- supplyAmount+startingCamp.storage;
 		supplyAmount <- 0;
 		monitorMode <- true;
 	}
-	/*reflex request when: cycle=start_cycle
-	{
-		do send with: [receivers:: control, content:: ['I need supplies.'] ,performative::'request' ,protocol:: 'request_supplies'];
-		write 'requester '+string(self) +' sent a message to control center';
-	}*/
 	reflex handle_reply_from_supplies_1 when: (!empty(informs)) 
 	{
 		write 'requester '+string(self) +' received a reply from supply station to meet a deliveryman';
 		message replyfromsupplies <- informs at 0;
 	    deliveryman best_dm <- replyfromsupplies.content at 0;
 	    color <-best_dm.color;
-	    do send with: [receivers:: [best_dm], content:: ['I need supplies.'] ,performative::'request' ,protocol:: 'request_supplies'];
+	    do send with: [receivers:: [best_dm], content:: ['I need supplies.',startingCamp.original_storage] ,performative::'request' ,protocol:: 'request_supplies'];
 	    remove index:0 from: informs;
 	}
 	
@@ -337,6 +332,8 @@ species deliveryman parent:people {
 	list<requester> requesters;
 	meetingpoint mymeetingpoint;
 	float carryAmount;
+	float capacity;
+	bool is_loading;
 	
 	init
 	{
@@ -346,6 +343,9 @@ species deliveryman parent:people {
 			color <- myself.color;
 		}
 		mymeetingpoint <-themeetingpoint at 0;
+		carryAmount <- deliveryCapacity;
+		capacity<-deliveryCapacity;
+		is_loading<-false;
 	}
 	
 	reflex deliver when: !empty(requesters at_distance deliveryRange) // deliveryRange
@@ -358,8 +358,7 @@ species deliveryman parent:people {
 			// and 
 			// self.supplyAmount <- self.neededAmount
 			// Give him supplies and tell him to go home :))))
-			myself.carryAmount <- myself.carryAmount - 100.0;
-			self.supplyAmount <- 100.0;
+			self.supplyAmount <- self.startingCamp.original_storage;
 			self.target_cell <- self.home_cell;
 			
 			// get receiver and remove from list
@@ -371,12 +370,14 @@ species deliveryman parent:people {
 	{
 		
 		supplies newHome <- supplies closest_to self;
+		home_cell <- newHome.current_cell;
 		target_cell <-newHome.current_cell;
 		mymeetingpoint.mylocation <-nil;
 		// Refill supplies when we are empty, near home cell and its not busy
-		if(carryAmount < 300 and (self.location distance_to home_cell.location) < 2 and newHome.loadingDeliveryMan = nil)
+		if(carryAmount < capacity and (self.location distance_to home_cell.location) < 2 and newHome.loadingDeliveryMan = nil)
 		{
 			write "load me " + string(self) + " at " + cycle;
+			is_loading <-true;
 			newHome.loadingDeliveryMan <- self;
 			newHome.loadStartingCycle <- cycle; // Time entered
 			//carryAmount <- 300.0;
@@ -389,7 +390,9 @@ species deliveryman parent:people {
 	{ 
 		write 'deliveryman '+string(self)+' received a message';
 	    message requestfromrequester <- messages at 0;
+	    float requestedAmount <-requestfromrequester.content at 1;
 	    requesters <- requesters+requestfromrequester.sender;
+	    carryAmount <- carryAmount - requestedAmount;
 	    
 	    list<people> allLocations <- requesters+self;
 		int n <- length(allLocations);
@@ -433,7 +436,7 @@ species deliveryman parent:people {
 	aspect default {
 		if(current_cell != home_cell){
 		  draw pyramid(size) at: {location.x,location.y,3}  color: headColor;
-		  draw sphere(size) at: {location.x,location.y,size} color: color;
+		  draw circle(size) at: {location.x,location.y,size} color: color;
 		}
 	}
 	
@@ -462,6 +465,7 @@ species camp parent:building
 	// We can create with random variables. Just set it here for demonstration
 	init
 	{
+		write 'camp '+string(self) +' started';
 		storage <- float(50 + rnd(100));
 		original_storage <- storage;
 		consume_rate <- 2.0 + rnd(3.6);
@@ -473,13 +477,15 @@ species camp parent:building
 	{
 		storage <- storage - consume_rate;
 	}
-	init
-	{
-		write 'camp '+string(self) +' started';
-	}
 	aspect default {
 		// Green = healthy, red = low on stocks?
-		draw pyramid(size) at: {location.x,location.y,0} color: rgb((1-(storage/original_storage))*128,(storage/original_storage)*128,0);// could be cool to do something like change color on depletion
+		if(storage>threshHold_level){
+			draw pyramid(size) at: {location.x,location.y,0} color: rgb("green");
+		}
+		else{
+			draw pyramid(size) at: {location.x,location.y,0} color: rgb("red");
+		}
+        //rgb((1-(storage/original_storage))*128,(storage/original_storage)*128,0);// could be cool to do something like change color on depletion
 	}
 	
 }
@@ -489,6 +495,7 @@ species supplies parent:building skills:[communicating]
 	list<deliveryman> deliverymen;
 	rgb color <- rgb("blue");
 	insideBuilding suppyInterior;
+	float storage;
 	
 	deliveryman loadingDeliveryMan;
 	int loadStartingCycle;
@@ -497,13 +504,15 @@ species supplies parent:building skills:[communicating]
 	init
 	{
 		write 'supply station '+string(self) +' started';
+		storage <-supplyStorage;
 	}
 	reflex handle_request when: (!empty(messages)) 
 	{
 		write 'supply station '+string(self)+' received a message from control center';
 	    message requestfromcontrol <- messages at 0;
 	    requester from<-requestfromcontrol.content at 0;
-	    deliveryman best_dm <- deliverymen with_min_of (each.target_cell distance_to from);
+	    float requestedAmount <-requestfromcontrol.content at 1;
+	    deliveryman best_dm <- deliverymen where (each.carryAmount >=requestedAmount and each.is_loading = false) with_min_of (each.target_cell distance_to from);
 	    if ((best_dm.location distance_to from.location)>(from.location distance_to location)){
 	    	do send with: [receivers:: from, content:: [self] ,performative::'refuse' ,protocol:: 'request_supplies'];
 	    }
@@ -520,13 +529,17 @@ species supplies parent:building skills:[communicating]
 		// How many rounds does it take to load vs each supply station can load at different speed?
 		
 		suppyInterior.isLoading <- true;
-		if(suppyInterior.totalSupplies >= 300)			// About 50 cycles
+		suppyInterior.loadingDeliveryMan <-loadingDeliveryMan;
+		if(suppyInterior.totalSupplies >= (loadingDeliveryMan.capacity-loadingDeliveryMan.carryAmount))			// About 50 cycles
 		//if(cycle - loadStartingCycle > 5)				// Currently it takes 5 cycles
 		{
 			write "Loaded " + loadingDeliveryMan + " successfully at cycle " + cycle + " from cycle " + loadStartingCycle;
-			loadingDeliveryMan.carryAmount <- suppyInterior.totalSupplies;
+			loadingDeliveryMan.carryAmount <- suppyInterior.totalSupplies+loadingDeliveryMan.carryAmount;
 			suppyInterior.totalSupplies <- 0.0;
+			suppyInterior.futureTotalSupplies <- 0.0;
+			suppyInterior.totalCarry <- 0.0;
 			suppyInterior.isLoading <- false;
+			loadingDeliveryMan.is_loading<-false;
 			loadingDeliveryMan <- nil;
 		}
 	}
@@ -535,6 +548,7 @@ species supplies parent:building skills:[communicating]
 	{
 		ask requester at_distance deliveryRange
 		{
+			self.supplyAmount <- self.startingCamp.original_storage;
 			self.target_cell <- self.home_cell;
 		}
 	}
@@ -558,7 +572,8 @@ species control parent:building skills:[communicating]
 		write 'supply control center '+string(self)+' received a message';
 	    message requestfromrequester <- messages at 0;
 	    supplies best_supplies <- allsupplies closest_to requestfromrequester.sender;
-	    do send with: [receivers:: best_supplies, content:: [requestfromrequester.sender] ,performative::'request' ,protocol:: 'request_supplies'];
+	    float requestedAmount <-requestfromrequester.content at 1;
+	    do send with: [receivers:: best_supplies, content:: [requestfromrequester.sender,requestedAmount] ,performative::'request' ,protocol:: 'request_supplies'];
 	    if (!empty(messages)){
 	    	remove index:0 from: messages;
 	    }
