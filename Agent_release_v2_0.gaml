@@ -266,12 +266,14 @@ species requester parent:people {
 	// The amount they are currently hold
 	float supplyAmount;
 	// Just to make sure we only send a single request. Should implement a FSM for this? State=Monitoring -> State=Requesting...
-	bool monitorMode;		
+	bool monitorMode;
+	float lowerBound;		
 	init
 	{
 		write 'requester '+string(self) +' started binding to camp '+ string(startingCamp);
 		monitorMode <- true;
 		supplyAmount <- 0.0;
+		lowerBound <-rnd (10) / 10;
 	}
 	
 	reflex callForSupplies when: monitorMode 
@@ -279,7 +281,7 @@ species requester parent:people {
 		if(startingCamp.storage < startingCamp.threshHold_level)
 		{
 			monitorMode <- false;
-			do send with: [receivers:: control, content:: ['I need supplies.',startingCamp.original_storage] ,performative::'request' ,protocol:: 'request_supplies'];
+			do send with: [receivers:: control, content:: ['I need supplies.',startingCamp.original_storage,lowerBound] ,performative::'request' ,protocol:: 'request_supplies'];
 			write 'requester '+string(self) +' sent a message to control center';
 		}
 		
@@ -297,7 +299,7 @@ species requester parent:people {
 		message replyfromsupplies <- informs at 0;
 	    deliveryman best_dm <- replyfromsupplies.content at 0;
 	    color <-best_dm.color;
-	    do send with: [receivers:: [best_dm], content:: ['I need supplies.',startingCamp.original_storage] ,performative::'request' ,protocol:: 'request_supplies'];
+	    do send with: [receivers:: [best_dm], content:: ['I need supplies.'] ,performative::'request' ,protocol:: 'request_supplies'];
 	    remove index:0 from: informs;
 	}
 	
@@ -329,9 +331,11 @@ species requester parent:people {
 species deliveryman parent:people {
 	rgb color <- rgb(rnd(255),rnd(255),rnd(255));
 	supplies startingSupplies;
-	list<requester> requesters;
+	list<requester> requester_ids;
+	map<requester,float> requesters;
 	meetingpoint mymeetingpoint;
 	float carryAmount;
+	float reservedAmount;
 	float capacity;
 	bool is_loading;
 	
@@ -346,23 +350,19 @@ species deliveryman parent:people {
 		carryAmount <- deliveryCapacity;
 		capacity<-deliveryCapacity;
 		is_loading<-false;
+		reservedAmount <-0.0;
 	}
 	
-	reflex deliver when: !empty(requesters at_distance deliveryRange) // deliveryRange
+	reflex deliver when: !empty(requester_ids at_distance deliveryRange) // deliveryRange
 	{
-		ask requesters at_distance deliveryRange
+		ask requester_ids at_distance deliveryRange
 		{
-			
-			//TODO: Give him the exact amount that he needs if we have enough and have priority?
-			// like myself.carryAmount <- myself.carryAmount - self.neededAmount;  
-			// and 
-			// self.supplyAmount <- self.neededAmount
-			// Give him supplies and tell him to go home :))))
-			self.supplyAmount <- self.startingCamp.original_storage;
+			self.supplyAmount <- myself.requesters[self];
 			self.target_cell <- self.home_cell;
 			
 			// get receiver and remove from list
-			remove self from: myself.requesters;
+			remove self from: myself.requester_ids;
+			remove key: self from: myself.requesters;
 		}
 	}
 	
@@ -390,11 +390,9 @@ species deliveryman parent:people {
 	{ 
 		write 'deliveryman '+string(self)+' received a message';
 	    message requestfromrequester <- messages at 0;
-	    float requestedAmount <-requestfromrequester.content at 1;
-	    requesters <- requesters+requestfromrequester.sender;
-	    carryAmount <- carryAmount - requestedAmount;
+	    requester_ids <- requester_ids+requestfromrequester.sender;
 	    
-	    list<people> allLocations <- requesters+self;
+	    list<people> allLocations <- requester_ids+self;
 		int n <- length(allLocations);
 		int max_speed <- 0;
     	int min_speed <- 1000;
@@ -427,7 +425,7 @@ species deliveryman parent:people {
 		// Set the agent target
 		target_cell <- cell closest_to target_point_weigh;
 		mymeetingpoint.mylocation <-target_point_weigh;
-		do send with: [receivers:: requesters, content:: [target_cell] ,performative::'propose' ,protocol:: 'request_supplies'];
+		do send with: [receivers:: requester_ids, content:: [target_cell] ,performative::'propose' ,protocol:: 'request_supplies'];
 	    if (!empty(messages)){
 	    	remove index:0 from: messages;
 	    }
@@ -499,6 +497,7 @@ species supplies parent:building skills:[communicating]
 	
 	deliveryman loadingDeliveryMan;
 	int loadStartingCycle;
+	map<requester,float> requesters;
 	
 	string supplyType;
 	init
@@ -512,12 +511,24 @@ species supplies parent:building skills:[communicating]
 	    message requestfromcontrol <- messages at 0;
 	    requester from<-requestfromcontrol.content at 0;
 	    float requestedAmount <-requestfromcontrol.content at 1;
-	    deliveryman best_dm <- deliverymen where (each.carryAmount >=requestedAmount and each.is_loading = false) with_min_of (each.target_cell distance_to from);
+	    float lowerBound <-requestfromcontrol.content at 2;
+	    deliveryman best_dm <- deliverymen where (each.carryAmount-each.reservedAmount >=requestedAmount*lowerBound and each.is_loading = false) with_min_of (each.target_cell distance_to from);
 	    if ((best_dm.location distance_to from.location)>(from.location distance_to location)){
 	    	do send with: [receivers:: from, content:: [self] ,performative::'refuse' ,protocol:: 'request_supplies'];
+	    	add from::requestedAmount to: requesters;
 	    }
 	    else{
 	    	do send with: [receivers:: from, content:: [best_dm] ,performative::'inform' ,protocol:: 'request_supplies'];
+	    	ask best_dm {
+	    		if requestedAmount<each.carryAmount-each.reservedAmount {
+	    			self.reservedAmount <-self.reservedAmount+requestedAmount;
+	    			add from::requestedAmount to: self.requesters;
+	    		}
+	    		else{
+	    			self.reservedAmount <-each.carryAmount;
+	    			add from::each.carryAmount-each.reservedAmount to: self.requesters;
+	    		}
+	    	}
 	    }
 	    if (!empty(messages)){
 	    	remove index:0 from: messages;
@@ -548,8 +559,11 @@ species supplies parent:building skills:[communicating]
 	{
 		ask requester at_distance deliveryRange
 		{
-			self.supplyAmount <- self.startingCamp.original_storage;
+			self.supplyAmount <- myself.requesters[self];
 			self.target_cell <- self.home_cell;
+			
+			// get receiver and remove from list
+			remove key: self from: myself.requesters;
 		}
 	}
 	
@@ -573,7 +587,8 @@ species control parent:building skills:[communicating]
 	    message requestfromrequester <- messages at 0;
 	    supplies best_supplies <- allsupplies closest_to requestfromrequester.sender;
 	    float requestedAmount <-requestfromrequester.content at 1;
-	    do send with: [receivers:: best_supplies, content:: [requestfromrequester.sender,requestedAmount] ,performative::'request' ,protocol:: 'request_supplies'];
+	    float lowerBound <-requestfromrequester.content at 2;
+	    do send with: [receivers:: best_supplies, content:: [requestfromrequester.sender,requestedAmount,lowerBound] ,performative::'request' ,protocol:: 'request_supplies'];
 	    if (!empty(messages)){
 	    	remove index:0 from: messages;
 	    }
