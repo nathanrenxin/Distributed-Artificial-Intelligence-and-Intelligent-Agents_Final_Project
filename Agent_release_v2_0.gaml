@@ -555,13 +555,12 @@ species supplies parent:building skills:[communicating]
 		}
 	}
 	
-	reflex deliver when: !empty(requester at_distance deliveryRange) // deliveryRange
+	reflex deliver when: !empty(requesters.keys at_distance deliveryRange) // deliveryRange
 	{
-		ask requester at_distance deliveryRange
+		ask requesters.keys at_distance deliveryRange
 		{
 			self.supplyAmount <- myself.requesters[self];
 			self.target_cell <- self.home_cell;
-			
 			// get receiver and remove from list
 			remove key: self from: myself.requesters;
 		}
