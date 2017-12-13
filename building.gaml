@@ -1,6 +1,6 @@
 model building
 
-import "Agent_release_v2_0.gaml"
+import "Agent_release_v2_1.gaml"
 
 global {
 	//file building_shapefile <- file("../includes/building.shp");
