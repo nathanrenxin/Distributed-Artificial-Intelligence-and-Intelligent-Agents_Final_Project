@@ -339,7 +339,9 @@ species requester parent:people {
 	    deliveryman best_dm <- deliveryman(replyfromsupplies.content at 0);
 	    color <-best_dm.color;
 	    do send with: [receivers:: [best_dm], content:: ['I need supplies.'] ,performative::'request' ,protocol:: 'request_supplies'];
-	    remove index:0 from: informs;
+	    if (!empty(informs) and replyfromsupplies=informs at 0){
+	    	remove index:0 from: informs;
+	    }
 	}
 	
 	reflex handle_reply_from_supplies_2 when: (!empty(refuses)) 
@@ -349,7 +351,9 @@ species requester parent:people {
 	    supplies closest_supplies <- supplies(replyfromsupplies.content at 0);
 	    color <-closest_supplies.color;
 	    target_cell <- closest_supplies.current_cell;
-	    remove index:0 from: refuses;
+	    if (!empty(refuses) and replyfromsupplies=informs at 0){
+	    	remove index:0 from: refuses;
+	    }
 	}
 	
 	reflex handle_reply_from_deliveryman when: (!empty(proposes)) 
@@ -357,7 +361,9 @@ species requester parent:people {
 		write 'requester '+string(self) +' received a reply from deliveryman';
 		message replyfromdeliveryman <- proposes at 0;
 	    target_cell <- cell(replyfromdeliveryman.content at 0);
-	    remove index:0 from: proposes;
+	    if (!empty(proposes) and replyfromdeliveryman=proposes at 0){
+	    	remove index:0 from: proposes;
+	    }
 	}
 	aspect default {
 		if(current_cell != home_cell){
@@ -468,7 +474,7 @@ species deliveryman parent:people {
 		target_cell <- cell where not (each.is_obstacle) closest_to target_point_weigh;
 		mymeetingpoint.mylocation <-target_point_weigh;
 		do send with: [receivers:: requester_ids, content:: [target_cell] ,performative::'propose' ,protocol:: 'request_supplies'];
-	    if (!empty(messages)){
+	    if (!empty(messages) and requestfromrequester=messages at 0){
 	    	remove index:0 from: messages;
 	    }
 	}
@@ -575,7 +581,7 @@ species supplies parent:building skills:[communicating]
 		    	}
 		    }
 		}
-	    if (!empty(messages)){
+	    if (!empty(messages) and requestfromcontrol=messages at 0){
 	    	remove index:0 from: messages;
 	    }
 	}
@@ -633,7 +639,7 @@ species control parent:building skills:[communicating]
 	    float requestedAmount <-float(requestfromrequester.content at 1);
 	    float lowerBound <-float(requestfromrequester.content at 2);
 	    do send with: [receivers:: best_supplies, content:: [requestfromrequester.sender,requestedAmount,lowerBound] ,performative::'request' ,protocol:: 'request_supplies'];
-	    if (!empty(messages)){
+	    if (!empty(messages) and requestfromrequester=messages at 0){
 	    	remove index:0 from: messages;
 	    }
 	}
