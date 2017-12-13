@@ -398,6 +398,8 @@ species deliveryman parent:people {
 		{
 			self.supplyAmount <- myself.requesters[self];
 			self.target_cell <- self.home_cell;
+			myself.carryAmount<-myself.carryAmount-myself.requesters[self];
+			myself.reservedAmount<-myself.reservedAmount-myself.requesters[self];
 			
 			// get receiver and remove from list
 			remove self from: myself.requester_ids;
@@ -556,27 +558,23 @@ species supplies parent:building skills:[communicating]
 	    float requestedAmount <-float(requestfromcontrol.content at 1);
 	    float lowerBound <-float(requestfromcontrol.content at 2);
 	    deliveryman best_dm <- deliverymen where (each.carryAmount-each.reservedAmount >=requestedAmount*lowerBound and each.is_loading = false) with_min_of (each.target_cell distance_to from);
-	    if(true)
-	    {
-	    	if ((best_dm.location distance_to from.location)>(from.location distance_to location)){
-		    	do send with: [receivers:: from, content:: [self] ,performative::'refuse' ,protocol:: 'request_supplies'];
-		    	add from::requestedAmount to: requesters;
-		    }
-		    else{
-		    	do send with: [receivers:: from, content:: [best_dm] ,performative::'inform' ,protocol:: 'request_supplies'];
-		    	ask best_dm {
-		    		if requestedAmount<each.carryAmount-each.reservedAmount {
-		    			self.reservedAmount <-self.reservedAmount+requestedAmount;
-		    			add from::requestedAmount to: self.requesters;
-		    		}
-		    		else{
-		    			self.reservedAmount <-each.carryAmount;
-		    			add from::each.carryAmount-each.reservedAmount to: self.requesters;
-		    		}
+	    if (best_dm=nil or (best_dm!=nil and (best_dm.location distance_to from.location)>(from.location distance_to location))){
+		    do send with: [receivers:: from, content:: [self] ,performative::'refuse' ,protocol:: 'request_supplies'];
+		    add from::requestedAmount to: requesters;
+		}
+		else{
+		    do send with: [receivers:: from, content:: [best_dm] ,performative::'inform' ,protocol:: 'request_supplies'];
+		    ask best_dm {
+		    	if requestedAmount<each.carryAmount-each.reservedAmount {
+		    		self.reservedAmount <-self.reservedAmount+requestedAmount;
+		    		add from::requestedAmount to: self.requesters;
+		        }
+		    	else{
+		    		self.reservedAmount <-each.carryAmount;
+		    		add from::each.carryAmount-each.reservedAmount to: self.requesters;
 		    	}
 		    }
-	    }
-	    
+		}
 	    if (!empty(messages)){
 	    	remove index:0 from: messages;
 	    }
