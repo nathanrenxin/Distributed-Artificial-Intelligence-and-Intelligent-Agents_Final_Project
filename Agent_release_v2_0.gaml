@@ -19,8 +19,8 @@ global {
 	int mapSize_Y <- 200;
 	int controllerRange <- 50;
 	int deliveryRange <- 1;
-	float deliveryCapacity<-300;
-	float supplyStorage<-10000;
+	float deliveryCapacity<-300.0;
+	float supplyStorage<-10000.0;
 	
 	
 	int peopleSpeed_rand <- 2;
@@ -46,6 +46,7 @@ global {
 	
 	int scenario_type;
 	float restrictionFactor;
+	bool staticMap;
 	
 	//int daylight_hour update: 70 + 30 * sin(cycle/10);
 	
@@ -53,11 +54,40 @@ global {
 	{
 		// STATIC OBJECTS
 		// Create the buildings
-		create obsticle from: building_shapefile
+		if(staticMap)
 		{
-			ask cell overlapping self {
-				is_obstacle <- true;
-				color <- rgb("black");
+			create obsticle from: building_shapefile
+			{
+				staticBuilding <- staticMap;
+				ask cell overlapping self {
+					is_obstacle <- true;
+					color <- rgb("black");
+				}
+			}
+		}
+		else
+		{
+			list<cell> all_cell <- cell where not (each.is_obstacle);//and each.is_obstacle) ;
+			int randomBuildings <- rnd(25) +3;
+			create obsticle number: randomBuildings
+			//create building from: building_shapefile
+			{
+				staticBuilding <- staticMap;
+				
+				cell current_cell <- one_of(all_cell);
+				location <- current_cell.location;
+				int bWidth <- rnd(5) +3;
+				int bLength <- rnd(5) +3;
+				
+				b_width <- bWidth;
+				b_length <- bLength;
+	    		list<cell> obsCells <- cell where (each.location.x > location.x-bWidth/2 and each.location.x < location.x+bWidth/2
+	    			and each.location.y > location.y-bLength/2 and each.location.y < location.y+bLength/2
+	    		);
+	    		loop aCell over:obsCells{
+					aCell.is_obstacle <- true;
+					aCell.color <- rgb("black");
+				}
 			}
 		}
 		
@@ -170,8 +200,8 @@ global {
 			}
 		}
 		
-		availableCamps <- camp;
-		availableSupplies <- supplies;		
+		availableCamps <- list<camp>(camp);
+		availableSupplies <- list<supplies>(supplies);		
 		
 		create deliveryman number: nb_deliveryman 
 		{
@@ -210,10 +240,20 @@ global {
 
 species obsticle 
 {
-	float height <- 3.0 + rnd(5);
+	int depth <- 3 + rnd(5);
+	int b_width;
+	int b_length;
+	bool staticBuilding;
 	aspect default 
 	{
-		draw shape color: rgb("gray") depth: height;
+		if(staticBuilding)
+		{
+			draw shape color: rgb("gray") depth: depth;
+		}
+		else
+		{
+			draw rectangle(b_width,b_length) depth:depth at: location color: #gray  empty: false ;
+		}
 	}
 }
 
@@ -222,7 +262,6 @@ species people skills:[moving, communicating] {
 	cell current_cell;
 	cell home_cell;
 	list<cell> memory;
-	float speed;
 	cell target_cell;
 	rgb headColor;
 	
@@ -290,14 +329,14 @@ species requester parent:people {
 	reflex requesterToCamp when: !monitorMode and supplyAmount > 0.0 and current_cell=home_cell
 	{
 		startingCamp.storage <- supplyAmount+startingCamp.storage;
-		supplyAmount <- 0;
+		supplyAmount <- float(0);
 		monitorMode <- true;
 	}
 	reflex handle_reply_from_supplies_1 when: (!empty(informs)) 
 	{
 		write 'requester '+string(self) +' received a reply from supply station to meet a deliveryman';
 		message replyfromsupplies <- informs at 0;
-	    deliveryman best_dm <- replyfromsupplies.content at 0;
+	    deliveryman best_dm <- deliveryman(replyfromsupplies.content at 0);
 	    color <-best_dm.color;
 	    do send with: [receivers:: [best_dm], content:: ['I need supplies.'] ,performative::'request' ,protocol:: 'request_supplies'];
 	    remove index:0 from: informs;
@@ -307,7 +346,7 @@ species requester parent:people {
 	{
 		write 'requester '+string(self) +' received a reply from supply station to pick up at station';
 		message replyfromsupplies <- refuses at 0;
-	    supplies closest_supplies <- replyfromsupplies.content at 0;
+	    supplies closest_supplies <- supplies(replyfromsupplies.content at 0);
 	    color <-closest_supplies.color;
 	    target_cell <- closest_supplies.current_cell;
 	    remove index:0 from: refuses;
@@ -317,7 +356,7 @@ species requester parent:people {
 	{
 		write 'requester '+string(self) +' received a reply from deliveryman';
 		message replyfromdeliveryman <- proposes at 0;
-	    target_cell <- replyfromdeliveryman.content at 0;
+	    target_cell <- cell(replyfromdeliveryman.content at 0);
 	    remove index:0 from: proposes;
 	}
 	aspect default {
@@ -401,13 +440,13 @@ species deliveryman parent:people {
 		{
 			max_speed <- int(max([max_speed, p.speed]));
 			min_speed <- int(min([min_speed, p.speed]));
-			total_speed <- total_speed + p.speed;
+			total_speed <- int(total_speed + p.speed);
 		}
 		
-		float total_factors <- 0;
+		float total_factors <- 0.0;
 		loop p over:allLocations
 		{
-			total_factors <- float(total_factors+ float(total_speed / p.speed));
+			total_factors <- (total_factors+ (total_speed / p.speed));
 		}
 		
 		float avg_x_weigh <- 0.0;
@@ -423,7 +462,8 @@ species deliveryman parent:people {
 		target_point_weigh <- {avg_x_weigh,avg_y_weigh,0};
 		
 		// Set the agent target
-		target_cell <- cell closest_to target_point_weigh;
+		// Do net select a meeting point that is an obstacle
+		target_cell <- cell where not (each.is_obstacle) closest_to target_point_weigh;
 		mymeetingpoint.mylocation <-target_point_weigh;
 		do send with: [receivers:: requester_ids, content:: [target_cell] ,performative::'propose' ,protocol:: 'request_supplies'];
 	    if (!empty(messages)){
@@ -481,6 +521,9 @@ species camp parent:building
 			draw pyramid(size) at: {location.x,location.y,0} color: rgb("green");
 		}
 		else{
+			// Exclamation mark
+			draw square(1) depth:1 at: {location.x,location.y,size+1} color: rgb("red");
+			draw square(1) depth:4 at: {location.x,location.y,size+3} color: rgb("red");
 			draw pyramid(size) at: {location.x,location.y,0} color: rgb("red");
 		}
         //rgb((1-(storage/original_storage))*128,(storage/original_storage)*128,0);// could be cool to do something like change color on depletion
@@ -509,27 +552,31 @@ species supplies parent:building skills:[communicating]
 	{
 		write 'supply station '+string(self)+' received a message from control center';
 	    message requestfromcontrol <- messages at 0;
-	    requester from<-requestfromcontrol.content at 0;
-	    float requestedAmount <-requestfromcontrol.content at 1;
-	    float lowerBound <-requestfromcontrol.content at 2;
+	    requester from<-requester(requestfromcontrol.content at 0);
+	    float requestedAmount <-float(requestfromcontrol.content at 1);
+	    float lowerBound <-float(requestfromcontrol.content at 2);
 	    deliveryman best_dm <- deliverymen where (each.carryAmount-each.reservedAmount >=requestedAmount*lowerBound and each.is_loading = false) with_min_of (each.target_cell distance_to from);
-	    if ((best_dm.location distance_to from.location)>(from.location distance_to location)){
-	    	do send with: [receivers:: from, content:: [self] ,performative::'refuse' ,protocol:: 'request_supplies'];
-	    	add from::requestedAmount to: requesters;
+	    if(true)
+	    {
+	    	if ((best_dm.location distance_to from.location)>(from.location distance_to location)){
+		    	do send with: [receivers:: from, content:: [self] ,performative::'refuse' ,protocol:: 'request_supplies'];
+		    	add from::requestedAmount to: requesters;
+		    }
+		    else{
+		    	do send with: [receivers:: from, content:: [best_dm] ,performative::'inform' ,protocol:: 'request_supplies'];
+		    	ask best_dm {
+		    		if requestedAmount<each.carryAmount-each.reservedAmount {
+		    			self.reservedAmount <-self.reservedAmount+requestedAmount;
+		    			add from::requestedAmount to: self.requesters;
+		    		}
+		    		else{
+		    			self.reservedAmount <-each.carryAmount;
+		    			add from::each.carryAmount-each.reservedAmount to: self.requesters;
+		    		}
+		    	}
+		    }
 	    }
-	    else{
-	    	do send with: [receivers:: from, content:: [best_dm] ,performative::'inform' ,protocol:: 'request_supplies'];
-	    	ask best_dm {
-	    		if requestedAmount<each.carryAmount-each.reservedAmount {
-	    			self.reservedAmount <-self.reservedAmount+requestedAmount;
-	    			add from::requestedAmount to: self.requesters;
-	    		}
-	    		else{
-	    			self.reservedAmount <-each.carryAmount;
-	    			add from::each.carryAmount-each.reservedAmount to: self.requesters;
-	    		}
-	    	}
-	    }
+	    
 	    if (!empty(messages)){
 	    	remove index:0 from: messages;
 	    }
@@ -585,8 +632,8 @@ species control parent:building skills:[communicating]
 		write 'supply control center '+string(self)+' received a message';
 	    message requestfromrequester <- messages at 0;
 	    supplies best_supplies <- allsupplies closest_to requestfromrequester.sender;
-	    float requestedAmount <-requestfromrequester.content at 1;
-	    float lowerBound <-requestfromrequester.content at 2;
+	    float requestedAmount <-float(requestfromrequester.content at 1);
+	    float lowerBound <-float(requestfromrequester.content at 2);
 	    do send with: [receivers:: best_supplies, content:: [requestfromrequester.sender,requestedAmount,lowerBound] ,performative::'request' ,protocol:: 'request_supplies'];
 	    if (!empty(messages)){
 	    	remove index:0 from: messages;
@@ -620,6 +667,7 @@ grid cell width: mapSize_X height: mapSize_Y  neighbours: 8 frequency: 0 {
 }
 
 experiment main type: gui {
+	parameter "use custom map" var: staticMap <- true;
 	parameter "number of camp" var: nb_camp min: 1 max: 1000;
 	parameter "number of deliveryman" var: nb_deliveryman min: 1 max: 1000;
 	parameter "number of supply station" var: nb_supplies min: 1 max: 1000;
