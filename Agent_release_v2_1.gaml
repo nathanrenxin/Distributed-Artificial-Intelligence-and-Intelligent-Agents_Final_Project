@@ -5,7 +5,7 @@
  */
 
 
-model Agent_release_v2_2
+model Agent_release_v2_1
 
 
 import "Mbuilding.gaml"
