@@ -1,13 +1,14 @@
 /**
- *  Agent_release_v2_2
- *  Author: ottarg
- *  Description: 
+ *  Agent
+ *  Author: ottarg and xin 
+ *  Description: sweet stuff
  */
+
 
 model Agent_release_v2_2
 
 
-import "building.gaml"
+import "Mbuilding.gaml"
 
 global {
 	file building_shapefile <- file("../includes/building.shp");
@@ -29,9 +30,9 @@ global {
 	float camp_size <- 4.0;
 	float control_size <- 5.0;
 	
-	int nb_deliveryman<-1;//9;
-	int nb_supplies <- 1;//3;
-	int nb_camp <-1;//10;
+	int nb_deliveryman<-9;
+	int nb_supplies <- 3;
+	int nb_camp <-9;
 	int nb_requester <- nb_camp;
 	int nb_control<-1;
 	
@@ -46,11 +47,15 @@ global {
 	int scenario_type;
 	float restrictionFactor;
 	bool staticMap;
+	int nb_resourceType <- 2;
 	
 	string scenario <- "Supplies | Camps | Supplies" among: ["Free for all", "Supplies | Camps", "Camps | Supplies", "Camps | Supplies | Camps", "Supplies | Camps | Supplies"] parameter: true;
 	
-	
-	//int daylight_hour update: 70 + 30 * sin(cycle/10);
+	bool dayNight_Behaviour <- false;
+	int daylight_baseValue <- 90;
+	int daylight_differValue <- 30;
+	// Not working???
+	int daylight_hour update: daylight_baseValue + daylight_differValue * sin(cycle*5);
 	
 	init 
 	{
@@ -180,13 +185,13 @@ global {
 		
 		// *** MULTIPLE EDIT
 		// Create all resources
-		int resourceId <- 0;
-		create resource number: 1 //nb_resourceType
+		/*int resourceId <- 0;
+		create resource number: nb_resourceType
 		{
 			ID <- resourceId;
 			resourceId <- resourceId +1;
 			priority <- float((rnd (20))/20); // Maybe just have 20?
-		}
+		}*/
 		
 		create supplies number: nb_supplies 
 		{
@@ -223,7 +228,8 @@ global {
 			current_cell.is_free <- false;
 			size <- camp_size;
 			
-			resourceStorage <- copy(resource);
+			
+			
 			
 			ask cell overlapping self {
 				color <- rgb(226,126,126);
@@ -263,6 +269,7 @@ global {
 			speed <- float(rnd(peopleSpeed_rand) + 1);
 			memory << current_cell;
 		}
+		
 	}
 }
 
@@ -381,13 +388,14 @@ species requester parent:people {
 			{
 				if(campResc.ID = resc.ID)
 				{
-					campResc.storage <- resc.holdingAmount;
+					write "Delivering id " + resc.ID + " storage " + campResc.storage + " holding " + resc.holdingAmount;
+					campResc.storage <- campResc.storage + resc.holdingAmount;
 					resc.holdingAmount <- 0.0;
 					campResc.holdingAmount <- 0.0; 
 				}
 			}
 		}
-		startingCamp.storage <- supplyAmount+startingCamp.storage;
+		//startingCamp.storage <- supplyAmount+startingCamp.storage;
 		supplyAmount <- float(0);
 		monitorMode <- true;
 		resourceNeeded_Info <- [];
@@ -491,7 +499,6 @@ species deliveryman parent:people {
 			is_loading <-true;
 			newHome.loadingDeliveryMan <- self;
 			newHome.loadStartingCycle <- cycle; // Time entered
-			//carryAmount <- 300.0;
 		}
 	}
 	
@@ -582,10 +589,6 @@ species building
 species camp parent:building
 {
 	rgb color <- rgb("red");
-	float storage;
-	float consume_rate;
-	float threshHold_level;
-	float original_storage;
 	
 	bool outOfStock;// *** MULTIPLE EDIT
 	list<resource> resourceStorage;
@@ -594,34 +597,45 @@ species camp parent:building
 	init
 	{
 		write 'camp '+string(self) +' started';
-		storage <- float(50 + rnd(100));
-		original_storage <- storage;
-		consume_rate <- 2.0 + rnd(3.6);
-		threshHold_level <- 20.0 + rnd(10);
 		outOfStock <- false;
+		int resourceId <- 0;
+		create resource number: nb_resourceType returns: myResouceList // nb_resourceType
+		{
+			ID <- resourceId;
+			resourceId <- resourceId +1;
+			//priority <- float((rnd (20))/20); // Maybe just have 20?
+		}
+		
+		resourceStorage <-  myResouceList;
+		write "list length " + length(resourceStorage);
+		
+		
 		// Each camps has different type of storage, consume rate and threshold for each resource
 		loop resc over: resourceStorage
 		{
 			resc.storage <- float(50 + rnd(100));
 			resc.original_storage <- resc.storage + 1;
-			resc.consume_rate <- 2.0 + rnd(3.6);
+			resc.consume_rate <- 2.0 + (rnd(300)/100) with_precision 2;
 			resc.threshHold_level <- 20.0 + rnd(10);
 		}
 		
 	}
 	// TODO: Change the consume rate when camp is at critical level?
+	// TODO: Change the consume rate based on night/daytime?
 	// Only consume supplies at camps when the storage is bigger than the consumption of supplies
-	reflex usage when:  storage > consume_rate
+	reflex usage //when:  storage > consume_rate
 	{
 		//storage <- storage - consume_rate;
 		// *** MULTIPLE EDIT
 		outOfStock <- false;
+		float perc <- dayNight_Behaviour ? (daylight_hour - float(daylight_baseValue-daylight_differValue))/(2*daylight_differValue) :1.0;
+		
 		loop resc over: resource
 		{
-			write string(resc.ID) + " storage " + resc.storage;
+			write "camp:" + string(self) + " resource " +  string(resc.ID) + " storage " + resc.storage + " cons " + resc.consume_rate;
 			if (resc.storage >resc.threshHold_level)
 			{
-				resc.storage <- resc.storage -resc.consume_rate;
+				resc.storage <- resc.storage -resc.consume_rate*perc;
 			}
 			else 
 			{
@@ -641,9 +655,7 @@ species camp parent:building
 			draw square(1) depth:4 at: {location.x,location.y,size+3} color: rgb("red");
 			draw pyramid(size) at: {location.x,location.y,0} color: rgb("red");
 		}
-        //rgb((1-(storage/original_storage))*128,(storage/original_storage)*128,0);// could be cool to do something like change color on depletion
-	}
-	
+    }
 }
 
 species supplies parent:building skills:[communicating]
@@ -726,6 +738,10 @@ species supplies parent:building skills:[communicating]
 	{
 		ask requesters.keys at_distance deliveryRange
 		{
+			loop resc over:self.resourceNeeded_Info
+			{
+				resc.holdingAmount <- resc.original_storage;
+			}
 			self.supplyAmount <- myself.requesters[self];
 			self.target_cell <- self.home_cell;
 			// get receiver and remove from list
@@ -788,10 +804,14 @@ grid cell width: mapSize_X height: mapSize_Y  neighbours: 8 frequency: 0 {
 }
 
 experiment main type: gui {
+	
 	parameter "use custom map" var: staticMap <- true;
 	parameter "number of camp" var: nb_camp min: 1 max: 1000;
 	parameter "number of deliveryman" var: nb_deliveryman min: 1 max: 1000;
 	parameter "number of supply station" var: nb_supplies min: 1 max: 1000;
+	parameter "number of resources" var: nb_resourceType min: 1 max: 10;
+	
+	parameter "day/night behaviour" var: dayNight_Behaviour <- false;
 	parameter "restriction factor" var: restrictionFactor min: 0.0 max: 1.0 <- 0.5;
 	output {
 		// Inside the loading docks
@@ -799,8 +819,10 @@ experiment main type: gui {
 			species insideBuilding;
 			species staff;
 		}
+		monitor "Current hour" value: daylight_hour;
 		// Change 120 to daylight_hour to use day/night system
-		display map type: opengl ambient_light: 120// daylight /*camera_pos: {world.location.x,-world.shape.height*1.5,70} camera_look_pos:{world.location.x,0,0}*/    
+		display map type: opengl ambient_light: dayNight_Behaviour ? daylight_hour
+		: 120
 		{
 			//image '../images/ground.jpg';
 			//grid cell lines: #red;		// uncomment so see area
