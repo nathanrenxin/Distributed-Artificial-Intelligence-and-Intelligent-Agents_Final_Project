@@ -340,7 +340,7 @@ species requester parent:people {
 	rgb color <- rgb(rnd(255),rnd(255),rnd(255));
 	camp startingCamp;
 	// The amount they are currently hold
-	float supplyAmount;
+	//float supplyAmount;
 	// Just to make sure we only send a single request. Should implement a FSM for this? State=Monitoring -> State=Requesting...
 	bool monitorMode;
 	float lowerBound;	
@@ -351,7 +351,7 @@ species requester parent:people {
 	{
 		write 'requester '+string(self) +' started binding to camp '+ string(startingCamp);
 		monitorMode <- true;
-		supplyAmount <- 0.0;
+		//supplyAmount <- 0.0;
 		lowerBound <-rnd (10) / 10;
 	}
 	
@@ -360,7 +360,6 @@ species requester parent:people {
 		resourceNeeded_Info <- [];
 		
 		if(startingCamp.outOfStock)							// *** MULTIPLE EDIT
-		//if(startingCamp.storage < startingCamp.threshHold_level)
 		{
 			loop resc over: startingCamp.resourceStorage
 			{
@@ -379,7 +378,9 @@ species requester parent:people {
 		
 	}
 	
-	reflex requesterToCamp when: !monitorMode and supplyAmount > 0.0 and current_cell=home_cell
+	// Note: will supplyAmount be used anymore?
+	reflex requesterToCamp when: !monitorMode and !empty(resourceNeeded_Info) and current_cell=home_cell
+	//reflex requesterToCamp when: !monitorMode and supplyAmount > 0.0 and current_cell=home_cell
 	{
 		// Must be a better way of finding index, currently O(N^2)
 		loop resc over:resourceNeeded_Info //startingCamp.resourceStorage
@@ -395,8 +396,7 @@ species requester parent:people {
 				}
 			}
 		}
-		//startingCamp.storage <- supplyAmount+startingCamp.storage;
-		supplyAmount <- float(0);
+		//supplyAmount <- float(0);
 		monitorMode <- true;
 		resourceNeeded_Info <- [];
 	}
@@ -452,6 +452,8 @@ species deliveryman parent:people {
 	float capacity;
 	bool is_loading;
 	
+	list<resource> resourceInfo;
+	
 	init
 	{
 		write 'deliveryman '+string(self) +' started binding to supply station '+ string(startingSupplies);
@@ -464,6 +466,15 @@ species deliveryman parent:people {
 		capacity<-deliveryCapacity;
 		is_loading<-false;
 		reservedAmount <-0.0;
+		
+		int resourceId <- 0;
+		create resource number: nb_resourceType returns: myResouceList // nb_resourceType
+		{
+			ID <- resourceId;
+			resourceId <- resourceId +1;
+		}
+		
+		resourceInfo <- myResouceList;
 	}
 	
 	reflex deliver when: !empty(requester_ids at_distance deliveryRange) // deliveryRange
@@ -472,10 +483,16 @@ species deliveryman parent:people {
 		{
 			loop resc over:self.resourceNeeded_Info
 			{
-				resc.holdingAmount <- resc.original_storage;
+				resc.holdingAmount <- myself.requesters[self];//resc.original_storage;
+				// #123 - would this be correct?
+				//myself.carryAmount<-myself.carryAmount-resc.holdingAmount;
+				//myself.reservedAmount<-myself.reservedAmount-resc.holdingAmount;
 			}
-			self.supplyAmount <- myself.requesters[self];
+			
+			//self.supplyAmount <- myself.requesters[self];
 			self.target_cell <- self.home_cell;
+			
+			// TODO: What should we do here regarding multiple resources? NOTE: SEE #123 above
 			myself.carryAmount<-myself.carryAmount-myself.requesters[self];
 			myself.reservedAmount<-myself.reservedAmount-myself.requesters[self];
 			
@@ -487,7 +504,6 @@ species deliveryman parent:people {
 	
 	reflex travel_back_to_supplies when: empty(requesters) // deliveryRange
 	{
-		
 		supplies newHome <- supplies closest_to self;
 		home_cell <- newHome.current_cell;
 		target_cell <-newHome.current_cell;
@@ -603,13 +619,9 @@ species camp parent:building
 		{
 			ID <- resourceId;
 			resourceId <- resourceId +1;
-			//priority <- float((rnd (20))/20); // Maybe just have 20?
 		}
 		
 		resourceStorage <-  myResouceList;
-		write "list length " + length(resourceStorage);
-		
-		
 		// Each camps has different type of storage, consume rate and threshold for each resource
 		loop resc over: resourceStorage
 		{
@@ -621,18 +633,16 @@ species camp parent:building
 		
 	}
 	// TODO: Change the consume rate when camp is at critical level?
-	// TODO: Change the consume rate based on night/daytime?
 	// Only consume supplies at camps when the storage is bigger than the consumption of supplies
 	reflex usage //when:  storage > consume_rate
 	{
-		//storage <- storage - consume_rate;
-		// *** MULTIPLE EDIT
 		outOfStock <- false;
 		float perc <- dayNight_Behaviour ? (daylight_hour - float(daylight_baseValue-daylight_differValue))/(2*daylight_differValue) :1.0;
 		
-		loop resc over: resource
+		loop resc over: resourceStorage
 		{
-			write "camp:" + string(self) + " resource " +  string(resc.ID) + " storage " + resc.storage + " cons " + resc.consume_rate;
+			// Uncomment to see the current status of every resource
+			//write "camp:" + string(self) + " resource " +  string(resc.ID) + " storage " + resc.storage + " cons " + resc.consume_rate;
 			if (resc.storage >resc.threshHold_level)
 			{
 				resc.storage <- resc.storage -resc.consume_rate*perc;
@@ -645,7 +655,6 @@ species camp parent:building
 	}
 	aspect default {
 		// Green = healthy, red = low on stocks?
-		//if(storage>threshHold_level){
 		if(!outOfStock){
 			draw pyramid(size) at: {location.x,location.y,0} color: rgb("green");
 		}
@@ -686,7 +695,7 @@ species supplies parent:building skills:[communicating]
 	    float totalAmount <- 0;
 		loop resc over: requestedAmounts
 	    {
-	    	totalAmount <- totalAmount + resc.original_storage * resc.weigh;
+	    	totalAmount <- totalAmount + resc.original_storage;
 	    }
 	    float lowerBound <-float(requestfromcontrol.content at 2);
 	    deliveryman best_dm <- deliverymen where (each.carryAmount-each.reservedAmount >=totalAmount*lowerBound and each.is_loading = false) with_min_of (each.target_cell distance_to from);
@@ -720,8 +729,7 @@ species supplies parent:building skills:[communicating]
 		
 		suppyInterior.isLoading <- true;
 		suppyInterior.loadingDeliveryMan <-loadingDeliveryMan;
-		if(suppyInterior.totalSupplies >= (loadingDeliveryMan.capacity-loadingDeliveryMan.carryAmount))			// About 50 cycles
-		//if(cycle - loadStartingCycle > 5)				// Currently it takes 5 cycles
+		if(suppyInterior.totalSupplies >= (loadingDeliveryMan.capacity-loadingDeliveryMan.carryAmount))
 		{
 			write "Loaded " + loadingDeliveryMan + " successfully at cycle " + cycle + " from cycle " + loadStartingCycle;
 			loadingDeliveryMan.carryAmount <- suppyInterior.totalSupplies+loadingDeliveryMan.carryAmount;
@@ -740,9 +748,8 @@ species supplies parent:building skills:[communicating]
 		{
 			loop resc over:self.resourceNeeded_Info
 			{
-				resc.holdingAmount <- resc.original_storage;
+				resc.holdingAmount <- myself.requesters[self];//resc.original_storage;
 			}
-			self.supplyAmount <- myself.requesters[self];
 			self.target_cell <- self.home_cell;
 			// get receiver and remove from list
 			remove key: self from: myself.requesters;
@@ -751,7 +758,6 @@ species supplies parent:building skills:[communicating]
 	
 	aspect default {
 		draw pyramid(size) at: {location.x,location.y,0} color: color;
-		//draw circle(controllerRange) color:rgb(226,126,126);
 	}
 }
 
@@ -768,7 +774,6 @@ species control parent:building skills:[communicating]
 		write 'supply control center '+string(self)+' received a message';
 	    message requestfromrequester <- messages at 0;
 	    supplies best_supplies <- allsupplies closest_to requestfromrequester.sender;
-	    //float requestedAmount <-float(requestfromrequester.content at 1);
 	    list<resource> requestedAmounts <- list<resource>(requestfromrequester.content at 1);
 	    float lowerBound <-float(requestfromrequester.content at 2);
 	    do send with: [receivers:: best_supplies, content:: [requestfromrequester.sender,requestedAmounts,lowerBound] ,performative::'request' ,protocol:: 'request_supplies'];
@@ -779,7 +784,6 @@ species control parent:building skills:[communicating]
 	
 	aspect default {
 		draw pyramid(size) at: {location.x,location.y,0} color: color;
-		//draw circle(controllerRange) color:rgb(226,126,126);
 	}
 }
 
