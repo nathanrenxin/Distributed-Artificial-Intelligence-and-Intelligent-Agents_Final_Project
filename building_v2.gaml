@@ -101,7 +101,7 @@ species insideBuilding {
 		isLoading<-true;
 	}
 	
-	reflex deregister when: isLoading=true
+	/*reflex deregister when: isLoading=true
 	{
 		bool loadingEnd <-true;
 		loop aResourceID over:toload.keys
@@ -123,7 +123,7 @@ species insideBuilding {
 				resourceStorage[aRescID].ontheway<-0;
 			}
 		}
-	}
+	}*/
 	
 	aspect default {
 		//draw shape color: rgb("gray") depth: height;
