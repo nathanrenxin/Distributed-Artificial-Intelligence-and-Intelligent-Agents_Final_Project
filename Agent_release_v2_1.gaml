@@ -729,7 +729,14 @@ species supplies parent:building skills:[communicating]
 		    		deliverymanUtility<-deliverymanUtility+(aDeliveryman.resourceInfo[rescID].holdingAmount-aDeliveryman.resourceInfo[rescID].reservedAmount)*resourcePrio[rescID];
 		    	}
 		    }
-		    deliverymanUtility <-deliverymanUtility-(from.location distance_to aDeliveryman.target_cell.location)*distanceUtility;
+		    if aDeliveryman.target_cell = aDeliveryman.home_cell
+		    {
+		    	deliverymanUtility <-deliverymanUtility-(from.location distance_to aDeliveryman.location)*distanceUtility;
+		    }
+		    else
+		    {
+		    	deliverymanUtility <-deliverymanUtility-(from.location distance_to aDeliveryman.target_cell.location)*distanceUtility;
+		    }
 		    add aDeliveryman::deliverymanUtility to:deliverymenUtility;	    	
 	    }
 	    deliveryman best_dm <- deliverymenUtility.keys[0];
@@ -802,7 +809,7 @@ species supplies parent:building skills:[communicating]
 		loadingDeliveryMan <- selectedDm;
 	}
 	
-	reflex loadSupplier when: loadingDeliveryMan != nil
+	reflex registerLoading when: loadingDeliveryMan != nil and suppyInterior.isLoading=false
 	{
 		// How many rounds does it take to load vs each supply station can load at different speed?
 		write "set interior";
@@ -813,8 +820,9 @@ species supplies parent:building skills:[communicating]
 		{
 			add rescID::(loadingDeliveryMan.resourceInfo[rescID].original_storage-loadingDeliveryMan.resourceInfo[rescID].holdingAmount) to: suppyInterior.toload;
 		}
-		suppyInterior.isLoading<-true;
-		
+	}
+	reflex deregisterLoading when: suppyInterior.isLoading 
+	{
 		bool loadingEnd <-true;
 		loop aResourceID over:suppyInterior.toload.keys
 		{
@@ -923,6 +931,7 @@ experiment main type: gui {
 		display inside_map type: opengl ambient_light: 150  {
 			species insideBuilding;
 			species staff;
+			species resource_storage;
 		}
 		monitor "Current hour" value: daylight_hour;
 		// Change 120 to daylight_hour to use day/night system
