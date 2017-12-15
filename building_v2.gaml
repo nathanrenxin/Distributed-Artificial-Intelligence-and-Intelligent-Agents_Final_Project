@@ -92,7 +92,7 @@ species insideBuilding {
 		}		
 	}
 	//Need to double check the valuable names
-	reflex register when: loadingDeliveryMan!=nil and isLoading=false
+	/*reflex register when: loadingDeliveryMan!=nil and isLoading=false
 	{
 		loop rescID over:loadingDeliveryMan.resourceInfo.keys
 		{
@@ -101,7 +101,7 @@ species insideBuilding {
 		isLoading<-true;
 	}
 	
-	/*reflex deregister when: isLoading=true
+	reflex deregister when: isLoading=true
 	{
 		bool loadingEnd <-true;
 		loop aResourceID over:toload.keys
@@ -164,7 +164,7 @@ species staff {
 	int speed <- 5;
 	
 	float carry;
-	int resource_ID;
+	int resource_ID<-0;
 	map<int,float> capacity;
 	
 	// Too lazy to do FSM
@@ -181,13 +181,13 @@ species staff {
 		target_cell <- insideCell closest_to myBuilding.mid_Point;
 	}	
 	// Move to green, someone entered
-	reflex collectInfo when: myBuilding.isLoading and travelToResource=false and false
+	reflex collectInfo when: myBuilding.isLoading and resource_ID=0
 	{
 		//target_cell <- insideCell closest_to myBuilding.enter_point;
 		bool infoCollected<-false;
-		loop aRescID over:myBuilding.toload.keys while:infoCollected=false
+		loop aRescID over:myBuilding.toload.keys 
 		{
-			if(myBuilding.resourceStorage[aRescID].loading<myBuilding.toload[aRescID]){
+			if(infoCollected=false and myBuilding.resourceStorage[aRescID].loading<myBuilding.toload[aRescID]){
 				infoCollected <- true;
 				myBuilding.resourceStorage[aRescID].loading <- myBuilding.resourceStorage[aRescID].loading + capacity[aRescID];
 				resource_ID<-aRescID;
@@ -219,7 +219,7 @@ species staff {
 			myBuilding.resourceStorage[resource_ID].loaded <- myBuilding.resourceStorage[resource_ID].loaded + carry;
 			carry <- 0;
 			travelToDelivery <- false;
-			resource_ID<-nil;
+			resource_ID<-0;
 		}
 	}
 	
