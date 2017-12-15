@@ -49,6 +49,7 @@ global {
 	float restrictionFactor;
 	bool staticMap;
 	int nb_resourceType <- 2;
+	float distanceUtility<-1.0;
 	
 	string scenario <- "Supplies | Camps | Supplies" among: ["Free for all", "Supplies | Camps", "Camps | Supplies", "Camps | Supplies | Camps", "Supplies | Camps | Supplies"] parameter: true;
 	
@@ -711,8 +712,37 @@ species supplies parent:building skills:[communicating]
 	    map<int,float> requestedAmounts <- map<int,float>(requestfromcontrol.content at 1);
 	    float lowerBound <-float(requestfromcontrol.content at 2);
 	    //TODO:
-	    deliveryman best_dm <- deliverymen /*where (each.carryAmount-each.reservedAmount >=totalAmount*lowerBound and each.is_loading = false)*/ with_min_of (each.target_cell distance_to from);
-	    if (best_dm=nil or (best_dm!=nil and (best_dm.location distance_to from.location)>(from.location distance_to location))){
+	    map<deliveryman,float> deliverymenUtility<-nil;
+	    loop aDeliveryman over:deliverymen
+	    {
+		    float deliverymanUtility<-0.0;
+		    loop rescID over:requestedAmounts.keys{
+		    	if requestedAmounts[rescID]<aDeliveryman.resourceInfo[rescID].holdingAmount-aDeliveryman.resourceInfo[rescID].reservedAmount {
+		    		deliverymanUtility<-deliverymanUtility+requestedAmounts[rescID]*resourcePrio[rescID];
+		        }
+		    	else{
+		    		deliverymanUtility<-deliverymanUtility+(aDeliveryman.resourceInfo[rescID].holdingAmount-aDeliveryman.resourceInfo[rescID].reservedAmount)*resourcePrio[rescID];
+		    	}
+		    }
+		    deliverymanUtility <-deliverymanUtility-(from.location distance_to aDeliveryman.target_cell.location)*distanceUtility;
+		    add aDeliveryman::deliverymanUtility to:deliverymenUtility;	    	
+	    }
+	    deliveryman best_dm <- deliverymenUtility.keys[0];
+	    float highest_dm_utility <- deliverymenUtility[best_dm];
+	    loop aDeliveryman over:deliverymenUtility.keys
+	    {
+	    	if deliverymenUtility[aDeliveryman]>highest_dm_utility
+	    	{
+	    		best_dm<-aDeliveryman;
+	    		highest_dm_utility<-deliverymenUtility[aDeliveryman];
+	    	}
+	    }
+	    float suppliesUtility<-0.0;
+		loop rescID over:requestedAmounts.keys{
+		    suppliesUtility<-suppliesUtility+requestedAmounts[rescID]*resourcePrio[rescID];
+		}
+		suppliesUtility <-suppliesUtility-(from.location distance_to location)*distanceUtility;	    
+	    if (best_dm=nil or (best_dm!=nil and suppliesUtility>highest_dm_utility)){
 		    do send with: [receivers:: from, content:: [self] ,performative::'refuse' ,protocol:: 'request_supplies'];
 		    add from::requestedAmounts to: requesters;
 		}
