@@ -57,7 +57,7 @@ global {
 	int daylight_baseValue <- 90;
 	int daylight_differValue <- 30;
 	// Not working???
-	int daylight_hour update: daylight_baseValue + daylight_differValue * sin(cycle*5);
+	int daylight_hour update: daylight_baseValue + daylight_differValue * sin(cycle*5); // -55 to start at night
 	
 	init 
 	{
@@ -459,6 +459,7 @@ species deliveryman parent:people {
 	//float reservedAmount;
 	//float capacity;
 	bool is_loading;
+	bool is_waiting;
 	
 	map<int,resource> resourceInfo;
 	
@@ -473,6 +474,7 @@ species deliveryman parent:people {
 		//carryAmount <- deliveryCapacity;
 		//capacity<-deliveryCapacity;
 		is_loading<-false;
+		is_waiting <- false;
 		//reservedAmount <-0.0;
 		
 		int resourceId <- 1;
@@ -525,12 +527,13 @@ species deliveryman parent:people {
 				shouldLoad<-true;
 			}
 		}
-		if(shouldLoad and (self.location distance_to home_cell.location) < 2 and newHome.loadingDeliveryMan = nil)
+		// Add themselfs to the waiting que at home station if they should be loaded, if they are there and they havent already loaded
+		if(shouldLoad and (self.location distance_to home_cell.location) < 2 and !is_waiting)// and newHome.loadingDeliveryMan = nil)
 		{
-			write "load me " + string(self) + " at " + cycle;
+			write "load me " + string(self) + " cycle " + cycle + " at station " + string(newHome);
 			is_loading <-true;
-			newHome.loadingDeliveryMan <- self;
-			newHome.loadStartingCycle <- cycle; // Time entered
+			is_waiting <- true;
+			add self to: newHome.deliverymen_Que;
 		}
 	}
 	
@@ -600,7 +603,6 @@ species resource
 	int ID;
 	// TODO: chill on the float variables? :Þ
 	float priority;
-	float quantity;
 	float storage;
 	float consume_rate;
 	float threshHold_level;
@@ -657,6 +659,7 @@ species camp parent:building
 		outOfStock <- false;
 		float perc <- dayNight_Behaviour ? (daylight_hour - float(daylight_baseValue-daylight_differValue))/(2*daylight_differValue) :1.0;
 		
+		
 		loop resc over: resourceStorage
 		{
 			// Uncomment to see the current status of every resource
@@ -688,13 +691,15 @@ species camp parent:building
 species supplies parent:building skills:[communicating]
 {
 	list<deliveryman> deliverymen;
+	list<deliveryman> deliverymen_Que;
 	rgb color <- rgb("blue");
 	insideBuilding suppyInterior;
 	float storage;
 	
 	deliveryman loadingDeliveryMan;
-	int loadStartingCycle;
 	map<requester,map<int,float>> requesters;
+	
+	int loadStartingCycle;
 	
 	string supplyType;
 	init
@@ -724,7 +729,14 @@ species supplies parent:building skills:[communicating]
 		    		deliverymanUtility<-deliverymanUtility+(aDeliveryman.resourceInfo[rescID].holdingAmount-aDeliveryman.resourceInfo[rescID].reservedAmount)*resourcePrio[rescID];
 		    	}
 		    }
-		    deliverymanUtility <-deliverymanUtility-(from.location distance_to aDeliveryman.target_cell.location)*distanceUtility;
+		    if aDeliveryman.target_cell = aDeliveryman.home_cell
+		    {
+		    	deliverymanUtility <-deliverymanUtility-(from.location distance_to aDeliveryman.location)*distanceUtility;
+		    }
+		    else
+		    {
+		    	deliverymanUtility <-deliverymanUtility-(from.location distance_to aDeliveryman.target_cell.location)*distanceUtility;
+		    }
 		    add aDeliveryman::deliverymanUtility to:deliverymenUtility;	    	
 	    }
 	    deliveryman best_dm <- deliverymenUtility.keys[0];
@@ -766,17 +778,59 @@ species supplies parent:building skills:[communicating]
 	    }
 	}
 	
-	reflex loadSupplier when: loadingDeliveryMan != nil
+	reflex selectDeliveryLoad when: loadingDeliveryMan = nil and !empty(deliverymen_Que)
+	{
+		write "Supply " + string(self) + " selecting from dm que size " + length(deliverymen_Que);
+		// Select the first one
+		float utilitySelection <- 0.0;
+		deliveryman selectedDm <- nil;
+		loop loadDm over: deliverymen_Que
+		{
+			float dmLoadUtil <- 0.0;
+			
+			loop resc over: loadDm.resourceInfo
+			{
+				dmLoadUtil <- dmLoadUtil + (resourcePrio[resc.ID] * resc.holdingAmount) with_precision 2;
+				// resc.priority is  resourcePrio[resc.ID]
+			}
+			
+			if(dmLoadUtil > utilitySelection)
+			{
+				utilitySelection <- dmLoadUtil;
+				selectedDm <- loadDm; 
+			}
+		}
+		
+		remove selectedDm from: deliverymen_Que;
+		
+		write "Supply " + string(self) + " selected dm " + string(selectedDm) + " util " + utilitySelection;
+		
+		loadStartingCycle <- cycle;
+		loadingDeliveryMan <- selectedDm;
+	}
+	
+	reflex registerLoading when: loadingDeliveryMan != nil and suppyInterior.isLoading=false
 	{
 		// How many rounds does it take to load vs each supply station can load at different speed?
+		write "set interior";
 		suppyInterior.isLoading <- true;
 		suppyInterior.loadingDeliveryMan <-loadingDeliveryMan;
 		
+		loop rescID over:loadingDeliveryMan.resourceInfo.keys
+		{
+			add rescID::(loadingDeliveryMan.resourceInfo[rescID].original_storage-loadingDeliveryMan.resourceInfo[rescID].holdingAmount) to: suppyInterior.toload;
+		}
+	}
+	reflex deregisterLoading when: suppyInterior.isLoading 
+	{
 		bool loadingEnd <-true;
 		loop aResourceID over:suppyInterior.toload.keys
 		{
+			write "interior " + suppyInterior.toload[aResourceID];
+			write "loaded " + suppyInterior.resourceStorage[aResourceID].loaded;
 			if suppyInterior.toload[aResourceID]>suppyInterior.resourceStorage[aResourceID].loaded
 			{
+				write "false - cancel load end";
 				loadingEnd <-false;
 			}
 		}
@@ -794,6 +848,8 @@ species supplies parent:building skills:[communicating]
 				suppyInterior.resourceStorage[aRescID].ontheway<-0;
 			}
 			loadingDeliveryMan.is_loading<-false;
+			loadingDeliveryMan.is_waiting<-false;
+			
 			loadingDeliveryMan <- nil;
 		}
 	}
@@ -875,6 +931,7 @@ experiment main type: gui {
 		display inside_map type: opengl ambient_light: 150  {
 			species insideBuilding;
 			species staff;
+			species resource_storage;
 		}
 		monitor "Current hour" value: daylight_hour;
 		// Change 120 to daylight_hour to use day/night system
