@@ -57,7 +57,7 @@ global {
 	int daylight_baseValue <- 90;
 	int daylight_differValue <- 30;
 	// Not working???
-	int daylight_hour update: daylight_baseValue + daylight_differValue * sin(cycle*5);
+	int daylight_hour update: daylight_baseValue + daylight_differValue * sin(cycle*5); // -55 to start at night
 	
 	init 
 	{
@@ -531,7 +531,6 @@ species deliveryman parent:people {
 		if(shouldLoad and (self.location distance_to home_cell.location) < 2 and !is_waiting)// and newHome.loadingDeliveryMan = nil)
 		{
 			write "load me " + string(self) + " cycle " + cycle + " at station " + string(newHome);
-			// write "is loading " + is_loading; // NOTE: This is alwaus false, weird
 			is_loading <-true;
 			is_waiting <- true;
 			add self to: newHome.deliverymen_Que;
@@ -660,6 +659,7 @@ species camp parent:building
 		outOfStock <- false;
 		float perc <- dayNight_Behaviour ? (daylight_hour - float(daylight_baseValue-daylight_differValue))/(2*daylight_differValue) :1.0;
 		
+		
 		loop resc over: resourceStorage
 		{
 			// Uncomment to see the current status of every resource
@@ -783,18 +783,20 @@ species supplies parent:building skills:[communicating]
 			
 			loop resc over: loadDm.resourceInfo
 			{
-				dmLoadUtil <- dmLoadUtil + (resc.priority * resc.holdingAmount);
+				dmLoadUtil <- dmLoadUtil + (resourcePrio[resc.ID] * resc.holdingAmount) with_precision 2;
+				// resc.priority is  resourcePrio[resc.ID]
 			}
 			
 			if(dmLoadUtil > utilitySelection)
 			{
+				utilitySelection <- dmLoadUtil;
 				selectedDm <- loadDm; 
 			}
 		}
 		
 		remove selectedDm from: deliverymen_Que;
 		
-		write "Supply " + string(self) + " selected dm " + string(selectedDm) + " util " + length(deliverymen_Que);
+		write "Supply " + string(self) + " selected dm " + string(selectedDm) + " util " + utilitySelection;
 		
 		loadStartingCycle <- cycle;
 		loadingDeliveryMan <- selectedDm;
@@ -803,14 +805,24 @@ species supplies parent:building skills:[communicating]
 	reflex loadSupplier when: loadingDeliveryMan != nil
 	{
 		// How many rounds does it take to load vs each supply station can load at different speed?
+		write "set interior";
 		suppyInterior.isLoading <- true;
 		suppyInterior.loadingDeliveryMan <-loadingDeliveryMan;
+		
+		loop rescID over:loadingDeliveryMan.resourceInfo.keys
+		{
+			add rescID::(loadingDeliveryMan.resourceInfo[rescID].original_storage-loadingDeliveryMan.resourceInfo[rescID].holdingAmount) to: suppyInterior.toload;
+		}
+		suppyInterior.isLoading<-true;
 		
 		bool loadingEnd <-true;
 		loop aResourceID over:suppyInterior.toload.keys
 		{
+			write "interior " + suppyInterior.toload[aResourceID];
+			write "loaded " + suppyInterior.resourceStorage[aResourceID].loaded;
 			if suppyInterior.toload[aResourceID]>suppyInterior.resourceStorage[aResourceID].loaded
 			{
+				write "false - cancel load end";
 				loadingEnd <-false;
 			}
 		}

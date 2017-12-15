@@ -92,14 +92,14 @@ species insideBuilding {
 		}		
 	}
 	//Need to double check the valuable names
-	reflex register when: loadingDeliveryMan!=nil and isLoading=false
+	/* register when: loadingDeliveryMan!=nil and isLoading=false
 	{
 		loop rescID over:loadingDeliveryMan.resourceInfo.keys
 		{
 			add rescID::(loadingDeliveryMan.resourceInfo[rescID].original_storage-loadingDeliveryMan.resourceInfo[rescID].holdingAmount) to: toload;
 		}
 		isLoading<-true;
-	}
+	}*/
 	
 	/*reflex deregister when: isLoading=true
 	{
@@ -187,7 +187,7 @@ species staff {
 		bool infoCollected<-false;
 		loop aRescID over:myBuilding.toload.keys while:infoCollected=false
 		{
-			if(myBuilding.resourceStorage[aRescID].loading<myBuilding.toload[aRescID]){
+			if(myBuilding.resourceStorage[aRescID].loaded<myBuilding.toload[aRescID]){
 				infoCollected <- true;
 				myBuilding.resourceStorage[aRescID].loading <- myBuilding.resourceStorage[aRescID].loading + capacity[aRescID];
 				resource_ID<-aRescID;
