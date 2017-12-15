@@ -459,6 +459,7 @@ species deliveryman parent:people {
 	//float reservedAmount;
 	//float capacity;
 	bool is_loading;
+	bool is_waiting;
 	
 	map<int,resource> resourceInfo;
 	
@@ -473,6 +474,7 @@ species deliveryman parent:people {
 		//carryAmount <- deliveryCapacity;
 		//capacity<-deliveryCapacity;
 		is_loading<-false;
+		is_waiting <- false;
 		//reservedAmount <-0.0;
 		
 		int resourceId <- 1;
@@ -525,12 +527,14 @@ species deliveryman parent:people {
 				shouldLoad<-true;
 			}
 		}
-		if(shouldLoad and (self.location distance_to home_cell.location) < 2 and newHome.loadingDeliveryMan = nil)
+		// Add themselfs to the waiting que at home station if they should be loaded, if they are there and they havent already loaded
+		if(shouldLoad and (self.location distance_to home_cell.location) < 2 and !is_waiting)// and newHome.loadingDeliveryMan = nil)
 		{
-			write "load me " + string(self) + " at " + cycle;
+			write "load me " + string(self) + " cycle " + cycle + " at station " + string(newHome);
+			// write "is loading " + is_loading; // NOTE: This is alwaus false, weird
 			is_loading <-true;
-			newHome.loadingDeliveryMan <- self;
-			newHome.loadStartingCycle <- cycle; // Time entered
+			is_waiting <- true;
+			add self to: newHome.deliverymen_Que;
 		}
 	}
 	
@@ -600,7 +604,6 @@ species resource
 	int ID;
 	// TODO: chill on the float variables? :Þ
 	float priority;
-	float quantity;
 	float storage;
 	float consume_rate;
 	float threshHold_level;
@@ -688,13 +691,15 @@ species camp parent:building
 species supplies parent:building skills:[communicating]
 {
 	list<deliveryman> deliverymen;
+	list<deliveryman> deliverymen_Que;
 	rgb color <- rgb("blue");
 	insideBuilding suppyInterior;
 	float storage;
 	
 	deliveryman loadingDeliveryMan;
-	int loadStartingCycle;
 	map<requester,map<int,float>> requesters;
+	
+	int loadStartingCycle;
 	
 	string supplyType;
 	init
@@ -766,6 +771,35 @@ species supplies parent:building skills:[communicating]
 	    }
 	}
 	
+	reflex selectDeliveryLoad when: loadingDeliveryMan = nil and !empty(deliverymen_Que)
+	{
+		write "Supply " + string(self) + " selecting from dm que size " + length(deliverymen_Que);
+		// Select the first one
+		float utilitySelection <- 0.0;
+		deliveryman selectedDm <- nil;
+		loop loadDm over: deliverymen_Que
+		{
+			float dmLoadUtil <- 0.0;
+			
+			loop resc over: loadDm.resourceInfo
+			{
+				dmLoadUtil <- dmLoadUtil + (resc.priority * resc.holdingAmount);
+			}
+			
+			if(dmLoadUtil > utilitySelection)
+			{
+				selectedDm <- loadDm; 
+			}
+		}
+		
+		remove selectedDm from: deliverymen_Que;
+		
+		write "Supply " + string(self) + " selected dm " + string(selectedDm) + " util " + length(deliverymen_Que);
+		
+		loadStartingCycle <- cycle;
+		loadingDeliveryMan <- selectedDm;
+	}
+	
 	reflex loadSupplier when: loadingDeliveryMan != nil
 	{
 		// How many rounds does it take to load vs each supply station can load at different speed?
@@ -794,6 +828,8 @@ species supplies parent:building skills:[communicating]
 				suppyInterior.resourceStorage[aRescID].ontheway<-0;
 			}
 			loadingDeliveryMan.is_loading<-false;
+			loadingDeliveryMan.is_waiting<-false;
+			
 			loadingDeliveryMan <- nil;
 		}
 	}
