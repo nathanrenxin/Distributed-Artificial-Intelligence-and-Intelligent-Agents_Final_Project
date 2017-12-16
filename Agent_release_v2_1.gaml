@@ -42,6 +42,9 @@ global {
 	point target_point_traverse;
 	point target_point_norm;
 	
+	int earthRadius <- 6000;
+	point earthCore <- {mapSize_X/2,mapSize_Y/2,-earthRadius};
+	
     list<camp> availableCamps;
 	list<supplies> availableSupplies;
 	
@@ -55,12 +58,16 @@ global {
 	
 	bool dayNight_Behaviour <- false;
 	int daylight_baseValue <- 90;
-	int daylight_differValue <- 30;
+	int daylight_differValue <- 50;
+	int rate <- 1;
 	// Not working???
-	int daylight_hour update: daylight_baseValue + daylight_differValue * sin(cycle*5); // -55 to start at night
+	int daylight_hour update: dayNight_Behaviour ? daylight_baseValue + daylight_differValue * sin(cycle*rate) : 90; 
+	float perc update: dayNight_Behaviour ? (daylight_hour - float(daylight_baseValue-daylight_differValue))/(2*daylight_differValue) :1.0;
 	
 	init 
 	{
+		daylight_hour <- 90;
+		perc <- 0.5;
 		loop i from:1 to: nb_resourceType  
 	    { 
           add i::300 to: deliveryCapacity;
@@ -84,7 +91,6 @@ global {
 			list<cell> all_cell <- cell where not (each.is_obstacle);//and each.is_obstacle) ;
 			int randomBuildings <- rnd(25) +3;
 			create obsticle number: randomBuildings
-			//create building from: building_shapefile
 			{
 				staticBuilding <- staticMap;
 				
@@ -272,6 +278,10 @@ global {
 			location <- current_cell.location;
 			speed <- float(rnd(peopleSpeed_rand) + 1);
 			memory << current_cell;
+		}
+		if(dayNight_Behaviour)
+		{
+			create earthsimulation number: 1;
 		}
 		
 	}
@@ -657,7 +667,6 @@ species camp parent:building
 	reflex usage //when:  storage > consume_rate
 	{
 		outOfStock <- false;
-		float perc <- dayNight_Behaviour ? (daylight_hour - float(daylight_baseValue-daylight_differValue))/(2*daylight_differValue) :1.0;
 		
 		
 		loop resc over: resourceStorage
@@ -666,7 +675,7 @@ species camp parent:building
 			//write "camp:" + string(self) + " resource " +  string(resc.ID) + " storage " + resc.storage + " cons " + resc.consume_rate;
 			if (resc.storage >resc.threshHold_level)
 			{
-				resc.storage <- resc.storage -resc.consume_rate*perc;
+				resc.storage <- resc.storage - resc.consume_rate*perc;
 			}
 			else 
 			{
@@ -812,7 +821,7 @@ species supplies parent:building skills:[communicating]
 	reflex registerLoading when: loadingDeliveryMan != nil and suppyInterior.isLoading=false
 	{
 		// How many rounds does it take to load vs each supply station can load at different speed?
-		write "set interior";
+		//write "set interior";
 		suppyInterior.isLoading <- true;
 		suppyInterior.loadingDeliveryMan <-loadingDeliveryMan;
 		
@@ -826,11 +835,11 @@ species supplies parent:building skills:[communicating]
 		bool loadingEnd <-true;
 		loop aResourceID over:suppyInterior.toload.keys
 		{
-			write "interior " + suppyInterior.toload[aResourceID];
-			write "loaded " + suppyInterior.resourceStorage[aResourceID].loaded;
+			//write "interior " + suppyInterior.toload[aResourceID];
+			//write "loaded " + suppyInterior.resourceStorage[aResourceID].loaded;
 			if suppyInterior.toload[aResourceID]>suppyInterior.resourceStorage[aResourceID].loaded
 			{
-				write "false - cancel load end";
+				//write "false - cancel load end";
 				loadingEnd <-false;
 			}
 		}
@@ -909,6 +918,32 @@ species meetingpoint
 	}
 }
 
+species earthsimulation
+{
+	point myLocation;
+	int centerPos <- mapSize_X/2;
+	int elipseFocal_A <- mapSize_X*4 ;
+	int elipseFocal_B <- mapSize_X/2 ;
+	
+	init
+	{
+		myLocation <- {centerPos + elipseFocal_A * cos(cycle*rate), -1500, elipseFocal_B*sin(cycle*rate) -200};
+	}
+	reflex update
+	{
+		myLocation <- {centerPos + elipseFocal_A * cos(cycle*rate), -1500, elipseFocal_B*sin(cycle*rate) -200};
+	}
+	
+	aspect default
+	{
+		draw sphere(earthRadius) at: earthCore color: rgb(222,184,135);	
+		draw sphere(people_size * 8) 
+		at: myLocation
+		color: rgb("yellow");		
+	}
+	
+}
+
 grid cell width: mapSize_X height: mapSize_Y  neighbours: 8 frequency: 0 {
 	bool is_obstacle <- false;
 	bool is_supply <- false;
@@ -918,14 +953,14 @@ grid cell width: mapSize_X height: mapSize_Y  neighbours: 8 frequency: 0 {
 
 experiment main type: gui {
 	
-	parameter "use custom map" var: staticMap <- true;
-	parameter "number of camp" var: nb_camp min: 1 max: 1000;
-	parameter "number of deliveryman" var: nb_deliveryman min: 1 max: 1000;
-	parameter "number of supply station" var: nb_supplies min: 1 max: 1000;
-	parameter "number of resources" var: nb_resourceType min: 1 max: 10;
+	parameter "Use custom map" var: staticMap <- true;
+	parameter "Number of camp" var: nb_camp min: 1 max: 1000;
+	parameter "Number of deliveryman" var: nb_deliveryman min: 1 max: 1000;
+	parameter "Number of supply station" var: nb_supplies min: 1 max: 1000;
+	parameter "Number of resources" var: nb_resourceType min: 1 max: 10;
 	
-	parameter "day/night behaviour" var: dayNight_Behaviour <- false;
-	parameter "restriction factor" var: restrictionFactor min: 0.0 max: 1.0 <- 0.5;
+	parameter "Earth + day/night" var: dayNight_Behaviour <- false;
+	parameter "Restriction factor" var: restrictionFactor min: 0.0 max: 1.0 <- 0.5;
 	output {
 		// Inside the loading docks
 		display inside_map type: opengl ambient_light: 150  {
@@ -934,9 +969,11 @@ experiment main type: gui {
 			species resource_storage;
 		}
 		monitor "Current hour" value: daylight_hour;
+		monitor "Perc" value: perc;
 		// Change 120 to daylight_hour to use day/night system
-		display map type: opengl ambient_light: dayNight_Behaviour ? daylight_hour
-		: 120
+		display map type: opengl 
+		ambient_light: dayNight_Behaviour ? daylight_hour: 120
+		background: dayNight_Behaviour ? rgb(153*perc,204*perc,255*perc) : #white
 		{
 			//image '../images/ground.jpg';
 			//grid cell lines: #red;		// uncomment so see area
@@ -947,6 +984,7 @@ experiment main type: gui {
 			species deliveryman;
 			species meetingpoint;
 			species control refresh: false;
+			species earthsimulation;
 		}
 	}
 }

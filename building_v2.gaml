@@ -32,6 +32,8 @@ species insideBuilding {
 	point resource_point;
 	point enter_point;
 	point exit_point;
+	point enter_point_draw;
+	point exit_point_draw;
 	point mid_Point;
 	int posAdd;
 	float storage;
@@ -60,6 +62,8 @@ species insideBuilding {
 		enter_point <- {startPositionX+15, world.location.y*2};
 		exit_point <- {endPositionX-15, world.location.y*2};
 		
+		enter_point_draw <- {enter_point.x, enter_point.y, 4};
+		exit_point_draw  <- {exit_point.x, exit_point.y, 4};
 		// Let them be idle at mid point, for fun
 		mid_Point <- {startPositionX + posAdd/2, world.location.y};
 		insideCell the_target_cell <- insideCell closest_to mid_Point;
@@ -127,11 +131,15 @@ species insideBuilding {
 	
 	aspect default {
 		//draw shape color: rgb("gray") depth: height;
-		draw sphere(4) at: enter_point color: rgb("green");	
-		draw sphere(4) at: exit_point color: rgb("red");	
+		draw sphere(4) at: enter_point_draw color: rgb("green");	
+		draw sphere(4) at: exit_point_draw color: rgb("red");	
 		
 		// Draw wall
-		draw line([{startPositionX, 0}, {startPositionX, world.location.y*2}]) color: lineColor;
+		if(startPositionX > 0)
+		{
+			draw line([{startPositionX, 0}, {startPositionX, world.location.y*2}]) depth:5 color: lineColor;
+		}
+		
 	}
 }
 
@@ -143,15 +151,18 @@ species resource_storage
 	float loaded;
 	float loading;
 	float ontheway;
+	point resource_draw;
 	
 	init
 	{
 		loaded <- 0.0;
 		loading<-0.0;
 		ontheway<-0.0;
+		
+		resource_draw <- {location.x, location.y, 4};
 	}
 	aspect default {
-		draw sphere(4) at: location color: rgb(10*resourceID,10*resourceID,10*resourceID);	
+		draw sphere(4) at: resource_draw color: rgb(10*resourceID,10*resourceID,10*resourceID);	
 	}	
 }
 
