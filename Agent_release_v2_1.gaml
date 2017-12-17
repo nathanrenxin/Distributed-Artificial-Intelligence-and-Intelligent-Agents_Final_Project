@@ -515,6 +515,7 @@ species deliveryman parent:people {
 			{
 				myself.resourceInfo[rescID].holdingAmount<-myself.resourceInfo[rescID].holdingAmount-myself.requesters[self][rescID];
 				myself.resourceInfo[rescID].reservedAmount<-myself.resourceInfo[rescID].reservedAmount-myself.requesters[self][rescID];
+				write "deliver resource "+rescID+" amount "+myself.requesters[self][rescID];
 			}
 			// get receiver and remove from list
 			remove self from: myself.requester_ids;
@@ -773,13 +774,16 @@ species supplies parent:building skills:[communicating]
 		    	loop rescID over:requestedAmounts.keys{
 		    		if requestedAmounts[rescID]<self.resourceInfo[rescID].holdingAmount-self.resourceInfo[rescID].reservedAmount {
 		    		    self.resourceInfo[rescID].reservedAmount <-self.resourceInfo[rescID].reservedAmount+requestedAmounts[rescID];
+		    		    //write "reserve1 resource "+rescID+" amount "+requestedAmounts[rescID];
 		            }
 		    	    else{
+		    	    	//write "reserve2 resource "+rescID+" amount "+(self.resourceInfo[rescID].holdingAmount-self.resourceInfo[rescID].reservedAmount);
+		    	    	put self.resourceInfo[rescID].holdingAmount-self.resourceInfo[rescID].reservedAmount at: rescID in: requestedAmounts;
 		    		    self.resourceInfo[rescID].reservedAmount <-self.resourceInfo[rescID].holdingAmount;
-		    		    put self.resourceInfo[rescID].holdingAmount-self.resourceInfo[rescID].reservedAmount at: rescID in: requestedAmounts;
 		    	    }
 		    	}
 		    	add from::requestedAmounts to: self.requesters;
+		    	//write requestedAmounts;
 		    }
 		}
 	    if (!empty(messages) and requestfromcontrol=messages at 0){
@@ -803,7 +807,7 @@ species supplies parent:building skills:[communicating]
 				// resc.priority is  resourcePrio[resc.ID]
 			}
 			
-			if(dmLoadUtil > utilitySelection)
+			if(dmLoadUtil >= utilitySelection)
 			{
 				utilitySelection <- dmLoadUtil;
 				selectedDm <- loadDm; 
