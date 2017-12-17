@@ -56,7 +56,7 @@ global {
 	
 	string scenario <- "Supplies | Camps | Supplies" among: ["Free for all", "Supplies | Camps", "Camps | Supplies", "Camps | Supplies | Camps", "Supplies | Camps | Supplies"] parameter: true;
 	
-	bool dayNight_Behaviour <- false;
+	bool dayNight_Behaviour <- true;
 	int daylight_baseValue <- 90;
 	int daylight_differValue <- 50;
 	int rate <- 1;
@@ -282,6 +282,7 @@ global {
 		if(dayNight_Behaviour)
 		{
 			create earthsimulation number: 1;
+			create airplane number:1;
 		}
 		
 	}
@@ -936,12 +937,88 @@ species earthsimulation
 	
 	aspect default
 	{
+		// Earth
 		draw sphere(earthRadius) at: earthCore color: rgb(222,184,135);	
+		// Sun
 		draw sphere(people_size * 8) 
 		at: myLocation
-		color: rgb("yellow");		
+		color: rgb("yellow");	
+	}
+}
+
+species airplane skills: [moving]
+{
+	point targetSupply;
+	bool deliver;
+	int dir;
+	
+	int startHeight <- 120;
+	int dropHeight <- 45;
+	
+	init
+	{
+		dir <- (flip(0.5) ? 1 : -1);
+		
+		location <- { dir * mapSize_X * 3,mapSize_Y/2, startHeight };
+		supplies toSupply <- one_of(supplies);
+		targetSupply <- {toSupply.location.x, toSupply.location.y, dropHeight};
+		deliver <- true;
 	}
 	
+	reflex fly 
+	{
+		do goto target: targetSupply speed:5 ;
+		if(location = targetSupply and deliver)
+		{
+			deliver <- false;
+			write "DELIVER";
+			create carePackage number:1
+			{
+				draw_pos <-  myself.targetSupply;
+			}
+			targetSupply <- {4*mapSize_X * -1 * dir,mapSize_Y/2, startHeight };
+		}
+	}
+	
+	
+	// TODO: optimize this
+	reflex reset when: location.x > (mapSize_X*3) or location.x < (mapSize_X*3 * -1)
+	{
+		dir <- (flip(0.5) ? 1 : -1);
+		
+		deliver <- true;
+		location <- {dir * mapSize_X*3,mapSize_Y/2, startHeight };
+		supplies toSupply <- one_of(supplies);
+		targetSupply <- {toSupply.location.x, toSupply.location.y, dropHeight};
+	}
+	
+	aspect default
+	{
+		// Body
+		draw rectangle(10,4) depth:3 at: location color: #white  empty: false ;
+		// Wings
+		draw rectangle(2,12) depth:1 at: location color: #blue  empty: false ;
+	}
+}
+
+species carePackage
+{
+	point draw_pos;
+	
+	reflex update
+	{
+		draw_pos <- {draw_pos.x, draw_pos.y,draw_pos.z -1};
+		if(draw_pos.z < 1)
+		{
+			do die;
+		}
+	}
+	
+	aspect default
+	{
+		// Body
+		draw pyramid(4) at: draw_pos color: #blue;
+	}
 }
 
 grid cell width: mapSize_X height: mapSize_Y  neighbours: 8 frequency: 0 {
@@ -984,7 +1061,9 @@ experiment main type: gui {
 			species deliveryman;
 			species meetingpoint;
 			species control refresh: false;
+			species airplane;
 			species earthsimulation;
+			species carePackage;
 		}
 	}
 }
