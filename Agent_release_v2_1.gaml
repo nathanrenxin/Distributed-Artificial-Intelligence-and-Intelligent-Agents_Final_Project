@@ -2,11 +2,12 @@
  *  Agent
  *  Author: ottarg and xin 
  *  Description: sweet stuff
+ *  Report: https://docs.google.com/document/d/1UkFeAOueBvQM-RV1TmIlhmxcTNKNXAtmPyyTegMDfJ8/edit
+ *  Slides: https://docs.google.com/presentation/d/18BWt01PNQnj8l18-vvu5AajVjYbKAtw6maEFeEHuqg8/edit#slide=id.p 
  */
 
 
 model Agent_release_v2_1
-
 
 import "building_v2.gaml"
 
@@ -54,27 +55,30 @@ global {
 	int nb_resourceType <- 2;
 	float distanceUtility<-1.0;
 	
-	string scenario <- "Supplies | Camps | Supplies" among: ["Free for all", "Supplies | Camps", "Camps | Supplies", "Camps | Supplies | Camps", "Supplies | Camps | Supplies"] parameter: true;
+	string scenario <- "Camps | Supplies | Camps" among: ["Free for all", "Supplies | Camps", "Camps | Supplies", "Camps | Supplies | Camps", "Supplies | Camps | Supplies"] parameter: true;
 	
 	bool dayNight_Behaviour <- true;
 	int daylight_baseValue <- 90;
 	int daylight_differValue <- 50;
 	int rate <- 1;
-	// Not working???
+
 	int daylight_hour update: dayNight_Behaviour ? daylight_baseValue + daylight_differValue * sin(cycle*rate) : 90; 
 	float perc update: dayNight_Behaviour ? (daylight_hour - float(daylight_baseValue-daylight_differValue))/(2*daylight_differValue) :1.0;
 	
 	init 
 	{
+		// Set the initial values for day/night simulation
 		daylight_hour <- 90;
 		perc <- 0.5;
+		
 		loop i from:1 to: nb_resourceType  
 	    { 
           add i::300 to: deliveryCapacity;
           add i::rnd(10)/10 to: resourcePrio;
         }
+        
 		// STATIC OBJECTS
-		// Create the buildings
+		// Create the buildings from map file
 		if(staticMap)
 		{
 			create obsticle from: building_shapefile
@@ -88,12 +92,14 @@ global {
 		}
 		else
 		{
+			// Create random number of buildings
 			list<cell> all_cell <- cell where not (each.is_obstacle);//and each.is_obstacle) ;
 			int randomBuildings <- rnd(25) +3;
 			create obsticle number: randomBuildings
 			{
 				staticBuilding <- staticMap;
 				
+				// Random width/height
 				cell current_cell <- one_of(all_cell);
 				location <- current_cell.location;
 				int bWidth <- rnd(5) +3;
@@ -101,6 +107,7 @@ global {
 				
 				b_width <- bWidth;
 				b_length <- bLength;
+				// Set cells as obsticle
 	    		list<cell> obsCells <- cell where (each.location.x > location.x-bWidth/2 and each.location.x < location.x+bWidth/2
 	    			and each.location.y > location.y-bLength/2 and each.location.y < location.y+bLength/2
 	    		);
@@ -112,46 +119,44 @@ global {
 		}
 		
 		// Get all available cells
-		list<cell> free_cell <- cell where not (each.is_obstacle);//and each.is_obstacle) ;
+		list<cell> free_cell <- cell where not (each.is_obstacle);
 		
-		// SCENARIO SETUP - hardcoded for now, we only have 5 scenarios
-		// 1 is free for all 
+		// SCENARIO SETUP 
 		// supplies | camps
 		list<cell> _restrictCells <- [];
 		if(scenario = "Supplies | Camps")
 		{
-			write scenario;
 			_restrictCells <- (free_cell where (each.location.x < mapSize_X*restrictionFactor));
 		}
 		
 		// camps | supplies
 		else if(scenario = "Camps | Supplies")
-		//else if(scenario_type = 3)
 		{
-			write scenario;
 			_restrictCells <- (free_cell where (each.location.x > mapSize_X*restrictionFactor));
 		}
 		// camps | supplies | camps
 		else if(scenario = "Camps | Supplies | Camps")
-		//else if(scenario_type = 4)
 		{
-			write scenario;
+			int xBase <- mapSize_X/2;
+			int yBase <- mapSize_Y/3;
 			float _restrictSplit <- restrictionFactor/2;
-			_restrictCells <- (free_cell where (each.location.x > mapSize_X*_restrictSplit and each.location.x < mapSize_X*(1-_restrictSplit)
-				and each.location.y > mapSize_Y*_restrictSplit/2 and each.location.y < mapSize_Y*_restrictSplit + mapSize_Y*(1-_restrictSplit)/2
-			));
+			_restrictCells <- (free_cell where (
+				(each.location.x < xBase + xBase*restrictionFactor and each.location.x > xBase*(1-restrictionFactor))
+				and (each.location.y < yBase + yBase*restrictionFactor and each.location.y > yBase - yBase*restrictionFactor)
+				));
 		}
 		// supplies | camps | supplies
 		else if(scenario =  "Supplies | Camps | Supplies")
-		//else if(scenario_type = 5)
 		{
-			write scenario_type;
+			int xBase <- mapSize_X/2;
+			int yBase <- mapSize_Y/3;
 			float _restrictSplit <- restrictionFactor/2;
-			_restrictCells <- (free_cell where ((each.location.x < mapSize_X*_restrictSplit or each.location.x > mapSize_X*(1-_restrictSplit))
-				or (each.location.y < mapSize_Y*_restrictSplit/2 or each.location.y > mapSize_Y*_restrictSplit + mapSize_Y*(1-_restrictSplit)/2)
-			));
+			_restrictCells <- (free_cell where (
+				(each.location.x > xBase + xBase*restrictionFactor or each.location.x < xBase*(1-restrictionFactor))
+				or (each.location.y > yBase + yBase*restrictionFactor or each.location.y < yBase - yBase*restrictionFactor)
+				));
 		}
-		// Set all cells found as "is_suppl
+		// Set all cells found as "is_supply"
 		if(not empty(_restrictCells))
 		{
 			ask _restrictCells 
@@ -159,7 +164,6 @@ global {
 				is_supply <- true;
 				//color <- rgb(229,136,236);
 			}
-			//_restrictCells <- nil;
 			free_cell <- free_cell + _restrictCells;
 		}
 		else
@@ -167,21 +171,18 @@ global {
 			_restrictCells <- free_cell;
 		}
 		
-		list<cell> supply_cell <- cell where (each.is_supply);//and each.is_obstacle) ;
-		// Create control
+		// Get all supply cells
+		list<cell> supply_cell <- cell where (each.is_supply);
+		// Create control center
 		create control number: nb_control
 		{
 			current_cell <-one_of(free_cell);
 			location <- current_cell.location;
 			current_cell.is_free <- false;
 			size <- control_size;
-			
-			ask cell overlapping self {
-				//color <- rgb(226,126,126);
-			}
 		}
 		
-		// Get all supply interiors
+		// Create all supply interiors
 		int startX <- 0;
 		list<insideCell> buildingCell <- insideCell where not (each.is_obstacle);
 		int posAdder <- int(widthX / nb_supplies);
@@ -194,18 +195,8 @@ global {
 			startX <- startPositionX + posAdder;
 		}
 		availableInteriors <- list<insideBuilding>(insideBuilding);
-		//write "found " + availableInteriors.size;
 		
-		// *** MULTIPLE EDIT
-		// Create all resources
-		/*int resourceId <- 0;
-		create resource number: nb_resourceType
-		{
-			ID <- resourceId;
-			resourceId <- resourceId +1;
-			priority <- float((rnd (20))/20); // Maybe just have 20?
-		}*/
-		
+		// Create all supply centers
 		create supplies number: nb_supplies 
 		{
 			current_cell <-one_of(_restrictCells);
@@ -223,7 +214,6 @@ global {
 			current_cell.is_supply <- true;
 			ask cell at_distance controllerRange{//overlapping self {
 				is_supply <- true;
-				//color <- rgb(229,136,236);
 			}
 			ask control{
 				allsupplies<-allsupplies+myself;
@@ -233,7 +223,7 @@ global {
 		// Clear memory
 		_restrictCells <- nil;
 		
-		// Create the camps
+		// Create all camps
 		create camp number: nb_camp
 		{
 			current_cell <-one_of(free_cell);
@@ -249,6 +239,7 @@ global {
 		availableCamps <- list<camp>(camp);
 		availableSupplies <- list<supplies>(supplies);		
 		
+		// Create all deliveryman
 		create deliveryman number: nb_deliveryman 
 		{
 			startingSupplies <-one_of(availableSupplies);
@@ -266,6 +257,7 @@ global {
 			}
 		}
 		
+		// Create requesters at every camp
 		create requester number: nb_requester 
 		{
 			startingCamp <-one_of(availableCamps);
@@ -279,17 +271,17 @@ global {
 			speed <- float(rnd(peopleSpeed_rand) + 1);
 			memory << current_cell;
 		}
+		// Add environment view
 		if(dayNight_Behaviour)
 		{
 			create earthsimulation number: 1;
 			create airplane number:1;
 		}
-		
 	}
 }
 
 
-
+// Class for obsticle, which can be a building/rock that agents cannot pass through
 species obsticle 
 {
 	int depth <- 3 + rnd(5);
@@ -309,6 +301,7 @@ species obsticle
 	}
 }
 
+// Base class for agents that move in the simulation
 species people skills:[moving, communicating] {
 	float size <- people_size;
 	cell current_cell;
@@ -351,41 +344,32 @@ species people skills:[moving, communicating] {
 	}
 }
 
+// Class for requesters that monitor the camps resources and fetches more for them
 species requester parent:people {
 	rgb color <- rgb(rnd(255),rnd(255),rnd(255));
 	camp startingCamp;
-	// The amount they are currently hold
-	//float supplyAmount;
 	// Just to make sure we only send a single request. Should implement a FSM for this? State=Monitoring -> State=Requesting...
 	bool monitorMode;
 	float lowerBound;	
 	map<int,float> requestedAmount;
 	map<int,float> carryAmount;
-	
-	//list<resource> resourceNeeded_Info;
 		
 	init
 	{
 		write 'requester '+string(self) +' started binding to camp '+ string(startingCamp);
 		monitorMode <- true;
-		//supplyAmount <- 0.0;
 		lowerBound <-rnd (10) / 10;
 	}
 	
+	// monitoring camp and if it's out of stock, requester will see what resource is out of stock and request for more
 	reflex callForSupplies when: monitorMode 
 	{	
-		//resourceNeeded_Info <- [];
-		
-		if(startingCamp.outOfStock)							// *** MULTIPLE EDIT
+		if(startingCamp.outOfStock)							
 		{
 			loop resc over: startingCamp.resourceStorage
 			{
 				if(resc.storage < resc.threshHold_level)
 				{
-					//resource copyResourceInfo <-copy (resc);
-					//float newHoldingAmount <- copyResourceInfo.original_storage;
-					//copyResourceInfo.holdingAmount <- newHoldingAmount;
-					//add copyResourceInfo to: resourceNeeded_Info;
 					add resc.ID::resc.original_storage to: requestedAmount;
 				}
 			}
@@ -396,12 +380,11 @@ species requester parent:people {
 		
 	}
 	
-	// Note: will supplyAmount be used anymore?
+	// When they return to the camp, update the resource amount that they carry
 	reflex requesterToCamp when: !monitorMode and !empty(carryAmount) and current_cell=home_cell
-	//reflex requesterToCamp when: !monitorMode and supplyAmount > 0.0 and current_cell=home_cell
 	{
 		// Must be a better way of finding index, currently O(N^2)
-		loop rescID over:carryAmount.keys //startingCamp.resourceStorage
+		loop rescID over:carryAmount.keys 
 		{
 			loop campResc over:startingCamp.resourceStorage
 			{
@@ -409,16 +392,15 @@ species requester parent:people {
 				{
 					write "Delivering id " + rescID + " storage " + campResc.storage + " holding " + carryAmount[rescID];
 					campResc.storage <- campResc.storage + carryAmount[rescID];
-					//resc.holdingAmount <- 0.0;
-					//campResc.holdingAmount <- 0.0; 
 				}
 			}
 		}
-		//supplyAmount <- float(0);
+		// Set back to monitor mode
 		monitorMode <- true;
 		carryAmount <-nil;
 		requestedAmount<-nil;
 	}
+	// Receive a message from supply where he should meet the delivery man
 	reflex handle_reply_from_supplies_1 when: (!empty(informs)) 
 	{
 		write 'requester '+string(self) +' received a reply from supply station to meet a deliveryman';
@@ -430,7 +412,7 @@ species requester parent:people {
 	    	remove index:0 from: informs;
 	    }
 	}
-	
+	// Receive a message from supply to come and pick it up
 	reflex handle_reply_from_supplies_2 when: (!empty(refuses)) 
 	{
 		write 'requester '+string(self) +' received a reply from supply station to pick up at station';
@@ -466,9 +448,6 @@ species deliveryman parent:people {
 	list<requester> requester_ids;
 	map<requester,map<int,float>> requesters;
 	meetingpoint mymeetingpoint;
-	//float carryAmount;
-	//float reservedAmount;
-	//float capacity;
 	bool is_loading;
 	bool is_waiting;
 	
@@ -482,14 +461,11 @@ species deliveryman parent:people {
 			color <- myself.color;
 		}
 		mymeetingpoint <-themeetingpoint at 0;
-		//carryAmount <- deliveryCapacity;
-		//capacity<-deliveryCapacity;
 		is_loading<-false;
 		is_waiting <- false;
-		//reservedAmount <-0.0;
 		
 		int resourceId <- 1;
-		create resource number: nb_resourceType returns: myResouceList // nb_resourceType
+		create resource number: nb_resourceType returns: myResouceList 
 		{
 			ID <- resourceId;
 			priority<-resourcePrio[ID];
@@ -504,14 +480,13 @@ species deliveryman parent:people {
 		}
 	}
 	
-	reflex deliver when: !empty(requester_ids at_distance deliveryRange) // deliveryRange
+	reflex deliver when: !empty(requester_ids at_distance deliveryRange)
 	{
 		ask requester_ids at_distance deliveryRange
 		{
 			self.carryAmount<-myself.requesters[self];
 			self.target_cell <- self.home_cell;
 			
-			// TODO: What should we do here regarding multiple resources? NOTE: SEE #123 above
 			loop rescID over:myself.requesters[self].keys
 			{
 				myself.resourceInfo[rescID].holdingAmount<-myself.resourceInfo[rescID].holdingAmount-myself.requesters[self][rescID];
@@ -524,7 +499,7 @@ species deliveryman parent:people {
 		}
 	}
 	
-	reflex travel_back_to_supplies when: empty(requesters) // deliveryRange
+	reflex travel_back_to_supplies when: empty(requesters) 
 	{
 		supplies newHome <- supplies closest_to self;
 		home_cell <- newHome.current_cell;
@@ -548,7 +523,6 @@ species deliveryman parent:people {
 			add self to: newHome.deliverymen_Que;
 		}
 	}
-	
 	
 	// NOTE: only handle requests when we can deliver?
 	reflex handle_request when: (!empty(messages))
@@ -610,34 +584,35 @@ species deliveryman parent:people {
 	}
 }
 
+// Class for resource
 species resource
 {
 	int ID;
-	// TODO: chill on the float variables? :Þ
 	float priority;
 	float storage;
 	float consume_rate;
 	float threshHold_level;
 	float original_storage;
-	float weigh <- 0.5; // how heavy each items is
+	float weigh <- 0.5; // Not used
 	
 	float holdingAmount;
 	float reservedAmount;
 }
 
+// Base class for agents that represent buildings with behaviour
 species building
 {
 	cell current_cell;
 	list<cell> memory;
 	float size;
-	
 }
 
+// Class for camps that consume resource with different rate and signal out of stock at different threshold levels
 species camp parent:building
 {
 	rgb color <- rgb("red");
 	
-	bool outOfStock;// *** MULTIPLE EDIT
+	bool outOfStock;
 	list<resource> resourceStorage;
 	
 	// We can create with random variables. Just set it here for demonstration
@@ -664,17 +639,12 @@ species camp parent:building
 		}
 		
 	}
-	// TODO: Change the consume rate when camp is at critical level?
 	// Only consume supplies at camps when the storage is bigger than the consumption of supplies
 	reflex usage //when:  storage > consume_rate
 	{
 		outOfStock <- false;
-		
-		
 		loop resc over: resourceStorage
 		{
-			// Uncomment to see the current status of every resource
-			//write "camp:" + string(self) + " resource " +  string(resc.ID) + " storage " + resc.storage + " cons " + resc.consume_rate;
 			if (resc.storage >resc.threshHold_level)
 			{
 				resc.storage <- resc.storage - resc.consume_rate*perc;
@@ -686,7 +656,6 @@ species camp parent:building
 		}
 	}
 	aspect default {
-		// Green = healthy, red = low on stocks?
 		if(!outOfStock){
 			draw pyramid(size) at: {location.x,location.y,0} color: rgb("green");
 		}
@@ -694,6 +663,7 @@ species camp parent:building
 			// Exclamation mark
 			draw square(1) depth:1 at: {location.x,location.y,size+1} color: rgb("red");
 			draw square(1) depth:4 at: {location.x,location.y,size+3} color: rgb("red");
+			// House
 			draw pyramid(size) at: {location.x,location.y,0} color: rgb("red");
 		}
     }
@@ -723,7 +693,6 @@ species supplies parent:building skills:[communicating]
 		write 'supply station '+string(self)+' received a message from control center';
 	    message requestfromcontrol <- messages at 0;
 	    requester from<-requester(requestfromcontrol.content at 0);
-	   // float requestedAmount <-float(requestfromcontrol.content at 1);
 	    
 	    map<int,float> requestedAmounts <- map<int,float>(requestfromcontrol.content at 1);
 	    float lowerBound <-float(requestfromcontrol.content at 2);
@@ -775,16 +744,13 @@ species supplies parent:building skills:[communicating]
 		    	loop rescID over:requestedAmounts.keys{
 		    		if requestedAmounts[rescID]<self.resourceInfo[rescID].holdingAmount-self.resourceInfo[rescID].reservedAmount {
 		    		    self.resourceInfo[rescID].reservedAmount <-self.resourceInfo[rescID].reservedAmount+requestedAmounts[rescID];
-		    		    //write "reserve1 resource "+rescID+" amount "+requestedAmounts[rescID];
 		            }
 		    	    else{
-		    	    	//write "reserve2 resource "+rescID+" amount "+(self.resourceInfo[rescID].holdingAmount-self.resourceInfo[rescID].reservedAmount);
 		    	    	put self.resourceInfo[rescID].holdingAmount-self.resourceInfo[rescID].reservedAmount at: rescID in: requestedAmounts;
 		    		    self.resourceInfo[rescID].reservedAmount <-self.resourceInfo[rescID].holdingAmount;
 		    	    }
 		    	}
 		    	add from::requestedAmounts to: self.requesters;
-		    	//write requestedAmounts;
 		    }
 		}
 	    if (!empty(messages) and requestfromcontrol=messages at 0){
@@ -805,7 +771,6 @@ species supplies parent:building skills:[communicating]
 			loop resc over: loadDm.resourceInfo
 			{
 				dmLoadUtil <- dmLoadUtil + (resourcePrio[resc.ID] * resc.holdingAmount) with_precision 2;
-				// resc.priority is  resourcePrio[resc.ID]
 			}
 			
 			if(dmLoadUtil >= utilitySelection)
@@ -825,8 +790,6 @@ species supplies parent:building skills:[communicating]
 	
 	reflex registerLoading when: loadingDeliveryMan != nil and suppyInterior.isLoading=false
 	{
-		// How many rounds does it take to load vs each supply station can load at different speed?
-		//write "set interior";
 		suppyInterior.isLoading <- true;
 		suppyInterior.loadingDeliveryMan <-loadingDeliveryMan;
 		
@@ -840,11 +803,8 @@ species supplies parent:building skills:[communicating]
 		bool loadingEnd <-true;
 		loop aResourceID over:suppyInterior.toload.keys
 		{
-			//write "interior " + suppyInterior.toload[aResourceID];
-			//write "loaded " + suppyInterior.resourceStorage[aResourceID].loaded;
 			if suppyInterior.toload[aResourceID]>suppyInterior.resourceStorage[aResourceID].loaded
 			{
-				//write "false - cancel load end";
 				loadingEnd <-false;
 			}
 		}
@@ -1034,7 +994,7 @@ grid cell width: mapSize_X height: mapSize_Y  neighbours: 8 frequency: 0 {
 
 experiment main type: gui {
 	
-	parameter "Use custom map" var: staticMap <- true;
+	parameter "Use custom map" var: staticMap <- false;
 	parameter "Number of camp" var: nb_camp min: 1 max: 1000;
 	parameter "Number of deliveryman" var: nb_deliveryman min: 1 max: 1000;
 	parameter "Number of supply station" var: nb_supplies min: 1 max: 1000;
@@ -1051,15 +1011,13 @@ experiment main type: gui {
 		}
 		monitor "Current hour" value: daylight_hour;
 		monitor "Perc" value: perc;
-		// Change 120 to daylight_hour to use day/night system
 		display map type: opengl 
 		ambient_light: dayNight_Behaviour ? daylight_hour: 120
 		background: dayNight_Behaviour ? rgb(153*perc,204*perc,255*perc) : #white
 		{
-			//image '../images/ground.jpg';
 			//grid cell lines: #red;		// uncomment so see area
 			species obsticle refresh: false;
-			species camp ;//refresh: false;
+			species camp ;
 			species supplies refresh: false;
 			species requester;
 			species deliveryman;
