@@ -390,7 +390,7 @@ species requester parent:people {
 			{
 				if(campResc.ID = rescID)
 				{
-					write "Delivering id " + rescID + " storage " + campResc.storage + " holding " + carryAmount[rescID];
+					write 'requester '+string(self) +' delivering resource ' + rescID + " to camp " + startingCamp+ " with amount " + carryAmount[rescID];
 					campResc.storage <- campResc.storage + carryAmount[rescID];
 				}
 			}
@@ -491,7 +491,7 @@ species deliveryman parent:people {
 			{
 				myself.resourceInfo[rescID].holdingAmount<-myself.resourceInfo[rescID].holdingAmount-myself.requesters[self][rescID];
 				myself.resourceInfo[rescID].reservedAmount<-myself.resourceInfo[rescID].reservedAmount-myself.requesters[self][rescID];
-				write "deliver resource "+rescID+" amount "+myself.requesters[self][rescID];
+				//write "deliver resource "+rescID+" amount "+myself.requesters[self][rescID];
 			}
 			// get receiver and remove from list
 			remove self from: myself.requester_ids;
@@ -517,7 +517,7 @@ species deliveryman parent:people {
 		// Add themselfs to the waiting que at home station if they should be loaded, if they are there and they havent already loaded
 		if(shouldLoad and (self.location distance_to home_cell.location) < 2 and !is_waiting)// and newHome.loadingDeliveryMan = nil)
 		{
-			write "load me " + string(self) + " cycle " + cycle + " at station " + string(newHome);
+			write 'deliveryman '+string(self) +" entering loading queue at station " + string(newHome);
 			is_loading <-true;
 			is_waiting <- true;
 			add self to: newHome.deliverymen_Que;
@@ -760,7 +760,7 @@ species supplies parent:building skills:[communicating]
 	
 	reflex selectDeliveryLoad when: loadingDeliveryMan = nil and !empty(deliverymen_Que)
 	{
-		write "Supply " + string(self) + " selecting from dm que size " + length(deliverymen_Que);
+		write "Supply " + string(self) + " selecting from deliveryman loading queue with size " + length(deliverymen_Que);
 		// Select the first one
 		float utilitySelection <- 0.0;
 		deliveryman selectedDm <- nil;
@@ -782,7 +782,7 @@ species supplies parent:building skills:[communicating]
 		
 		remove selectedDm from: deliverymen_Que;
 		
-		write "Supply " + string(self) + " selected dm " + string(selectedDm) + " util " + utilitySelection;
+		write "Supply " + string(self) + " selected deliveryman " + string(selectedDm) + " with utility " + utilitySelection;
 		
 		loadStartingCycle <- cycle;
 		loadingDeliveryMan <- selectedDm;
@@ -810,7 +810,7 @@ species supplies parent:building skills:[communicating]
 		}
 		if loadingEnd
 		{
-			write "Loaded " + loadingDeliveryMan + " successfully at cycle " + cycle + " from cycle " + loadStartingCycle;
+			write "Supply " + string(self) + " loaded " + loadingDeliveryMan + " successfully at cycle " + cycle + " from cycle " + loadStartingCycle;
 			suppyInterior.isLoading<-false;
 			suppyInterior.loadingDeliveryMan<-nil;
 			suppyInterior.toload<-nil;
@@ -935,7 +935,7 @@ species airplane skills: [moving]
 		if(location = targetSupply and deliver)
 		{
 			deliver <- false;
-			write "DELIVER";
+			//write "DELIVER";
 			create carePackage number:1
 			{
 				draw_pos <-  myself.targetSupply;
