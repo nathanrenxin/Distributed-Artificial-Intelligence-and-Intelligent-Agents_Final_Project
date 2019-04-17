@@ -48,9 +48,6 @@ global {
 	float restrictionFactor;
 	bool staticMap;
 	
-	string scenario <- "Supplies | Camps | Supplies" among: ["Free for all", "Supplies | Camps", "Camps | Supplies", "Camps | Supplies | Camps", "Supplies | Camps | Supplies"] parameter: true;
-	
-	
 	//int daylight_hour update: 70 + 30 * sin(cycle/10);
 	
 	init 
@@ -101,54 +98,38 @@ global {
 		// 1 is free for all 
 		// supplies | camps
 		list<cell> _restrictCells <- [];
-		if(scenario = "Supplies | Camps")
+		if(scenario_type = 2)
 		{
-			write scenario;
 			_restrictCells <- (free_cell where (each.location.x < mapSize_X*restrictionFactor));
 		}
 		
 		// camps | supplies
-		else if(scenario = "Camps | Supplies")
-		//else if(scenario_type = 3)
+		else if(scenario_type = 3)
 		{
-			write scenario;
 			_restrictCells <- (free_cell where (each.location.x > mapSize_X*restrictionFactor));
 		}
 		// camps | supplies | camps
-		else if(scenario = "Camps | Supplies | Camps")
-		//else if(scenario_type = 4)
+		else if(scenario_type = 4)
 		{
-			write scenario;
+			// TODO: Make circle/range instead?
 			float _restrictSplit <- restrictionFactor/2;
-			_restrictCells <- (free_cell where (each.location.x > mapSize_X*_restrictSplit and each.location.x < mapSize_X*(1-_restrictSplit)
-				and each.location.y > mapSize_Y*_restrictSplit/2 and each.location.y < mapSize_Y*_restrictSplit + mapSize_Y*(1-_restrictSplit)/2
-			));
+			_restrictCells <- (free_cell where (each.location.x > mapSize_X*_restrictSplit and each.location.x < mapSize_X*(1-_restrictSplit)));
 		}
 		// supplies | camps | supplies
-		else if(scenario =  "Supplies | Camps | Supplies")
-		//else if(scenario_type = 5)
+		else if(scenario_type = 5)
 		{
-			write scenario_type;
+			// TODO: Make circle/range instead?
 			float _restrictSplit <- restrictionFactor/2;
-			_restrictCells <- (free_cell where ((each.location.x < mapSize_X*_restrictSplit or each.location.x > mapSize_X*(1-_restrictSplit))
-				or (each.location.y < mapSize_Y*_restrictSplit/2 or each.location.y > mapSize_Y*_restrictSplit + mapSize_Y*(1-_restrictSplit)/2)
-			));
+			_restrictCells <- (free_cell where (each.location.x < mapSize_X*_restrictSplit or each.location.x > mapSize_X*(1-_restrictSplit)));
 		}
 		// Set all cells found as "is_suppl
-		if(not empty(_restrictCells))
+		ask _restrictCells 
 		{
-			ask _restrictCells 
-			{
-				is_supply <- true;
-				//color <- rgb(229,136,236);
-			}
-			//_restrictCells <- nil;
-			free_cell <- free_cell + _restrictCells;
+			is_supply <- true;
+			//color <- rgb(229,136,236);
 		}
-		else
-		{
-			_restrictCells <- free_cell;
-		}
+		//_restrictCells <- nil;
+		free_cell <- free_cell + _restrictCells;
 		
 		list<cell> supply_cell <- cell where (each.is_supply);//and each.is_obstacle) ;
 		// Create control
@@ -590,13 +571,13 @@ species supplies parent:building skills:[communicating]
 		else{
 		    do send with: [receivers:: from, content:: [best_dm] ,performative::'inform' ,protocol:: 'request_supplies'];
 		    ask best_dm {
-		    	if requestedAmount<each.carryAmount-each.reservedAmount {
+		    	if requestedAmount<self.carryAmount-self.reservedAmount {
 		    		self.reservedAmount <-self.reservedAmount+requestedAmount;
 		    		add from::requestedAmount to: self.requesters;
 		        }
 		    	else{
-		    		self.reservedAmount <-each.carryAmount;
-		    		add from::each.carryAmount-each.reservedAmount to: self.requesters;
+		    		self.reservedAmount <-self.carryAmount;
+		    		add from::self.carryAmount-self.reservedAmount to: self.requesters;
 		    	}
 		    }
 		}
@@ -694,6 +675,7 @@ experiment main type: gui {
 	parameter "number of camp" var: nb_camp min: 1 max: 1000;
 	parameter "number of deliveryman" var: nb_deliveryman min: 1 max: 1000;
 	parameter "number of supply station" var: nb_supplies min: 1 max: 1000;
+	parameter "scenario type" var: scenario_type min:1 max:6 <- 4;
 	parameter "restriction factor" var: restrictionFactor min: 0.0 max: 1.0 <- 0.5;
 	
 	/*parameter "my_string" var: c <- "" category:"Simple types";
